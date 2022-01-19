@@ -23,7 +23,6 @@ def display_helper(
 
     plt.tight_layout()
     plt.subplots_adjust(top=1, bottom=0, wspace=0, hspace=0)
-    # plt.margins(0,0)
     if save_path is not None:
         plt.savefig(save_path, pad_inches=0.1, bbox_inches='tight')
     plt.show()

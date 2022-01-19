@@ -16,6 +16,12 @@ class MultiViewWrapper(gym.ObservationWrapper):
         percentages: Optional[List[float]] = None,
         null_value: Optional[int] = 1,
 ):
+        env = FullyObsWrapper(env) # TODO move this outside?
+        super().__init__(env)
+        self.env = env
+
+        self.observation_space = gym.spaces.Box(0, 10, (9,9,), dtype=np.int32)
+
         if percentages is None:
             percentages = [0.7, 0.7]
         
@@ -29,16 +35,12 @@ class MultiViewWrapper(gym.ObservationWrapper):
         self.obj_idx = obj_idx
         self.null_value = null_value
         self.initialized = False
-        self.env = FullyObsWrapper(env) # TODO move this outside?
     
     @property
     def num_views(self):
         return len(self.percentages)
 
     def observation(self, observation:Dict) -> Dict:
-        
-        env = self.unwrapped
-
         observation = observation['image'][...,0] # get object idx only array
 
         if not self.initialized: #TODO currently only works for immobile objects!!
@@ -112,6 +114,8 @@ class DropoutWrapper(gym.ObservationWrapper):
         dropout_p:Optional[Union[Iterable[float], float]] = 0.1,
         ignore_view:Optional[str] = 'full',
     ):
+        super().__init__(env)
+        
         # check inputs
         if isinstance(dropout_p, Iterable):
             if any(p > 1 for p in dropout_p) or any(p < 0 for p in dropout_p):
@@ -138,8 +142,38 @@ class DropoutWrapper(gym.ObservationWrapper):
             cur += 1
         return observation
 
+class MyFullFlatWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        env = FullyObsWrapper(env) #TODO refactor this
+        super().__init__(env)
+        self.env = env
+
+        self.observation_space = gym.spaces.Box(0, 10, (81,), dtype=np.int32)
+    
+    def observation(self, observation):
+        obs = observation['image'][...,0]
+        obs = einops.rearrange(obs, 'h w -> (h w)').astype(np.int32)
+
+        return obs
+
+class MyFullWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        env = FullyObsWrapper(env) #TODO refactor this
+        super().__init__(env)
+        self.env = env
+
+        self.observation_space = gym.spaces.Box(0, 10, (9,9,), dtype=np.int32)
+    
+    def observation(self, observation):
+        obs = observation['image'][...,0]
+
+        return obs
+
 class FlatWrapper(gym.ObservationWrapper):
     def __init__(self, env):
+        super().__init__(env)
+
+        self.observation_space = gym.spaces.Box(0, 10, (81,), dtype=np.int32)
         self.env = env
 
     def observation(self, observation:Dict) -> Dict:
