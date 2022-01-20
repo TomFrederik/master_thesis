@@ -12,7 +12,7 @@ class MultiViewWrapper(gym.ObservationWrapper):
     def __init__(
         self, 
         env:gym.Env, 
-        obj_idx: Optional[int] = 9, 
+        obj_idx: Optional[int] = 2, 
         percentages: Optional[List[float]] = None,
         null_value: Optional[int] = 1,
 ):
@@ -20,7 +20,7 @@ class MultiViewWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.env = env
 
-        self.observation_space = gym.spaces.Box(0, 10, (9,9,), dtype=np.int32)
+        self.observation_space = gym.spaces.Box(0, 10, (7,7,), dtype=np.int32)
 
         if percentages is None:
             percentages = [0.7, 0.7]
@@ -41,7 +41,7 @@ class MultiViewWrapper(gym.ObservationWrapper):
         return len(self.percentages)
 
     def observation(self, observation:Dict) -> Dict:
-        observation = observation['image'][...,0] # get object idx only array
+        observation = observation['image'][1:-1,1:-1,0] # get object idx only array
 
         if not self.initialized: #TODO currently only works for immobile objects!!
             self.view_to_obj = self._init_views(observation)
@@ -148,10 +148,10 @@ class MyFullFlatWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.env = env
 
-        self.observation_space = gym.spaces.Box(0, 10, (81,), dtype=np.int32)
+        self.observation_space = gym.spaces.Box(0, 10, (49,), dtype=np.int32)
     
     def observation(self, observation):
-        obs = observation['image'][...,0]
+        obs = observation['image'][1:-1,1:-1,0]
         obs = einops.rearrange(obs, 'h w -> (h w)').astype(np.int32)
 
         return obs
@@ -162,10 +162,10 @@ class MyFullWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.env = env
 
-        self.observation_space = gym.spaces.Box(0, 10, (9,9,), dtype=np.int32)
+        self.observation_space = gym.spaces.Box(0, 10, (7,7,), dtype=np.int32)
     
     def observation(self, observation):
-        obs = observation['image'][...,0]
+        obs = observation['image'][1:-1,1:-1,0]
 
         return obs
 
@@ -173,7 +173,7 @@ class FlatWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
 
-        self.observation_space = gym.spaces.Box(0, 10, (81,), dtype=np.int32)
+        self.observation_space = gym.spaces.Box(0, 10, (49,), dtype=np.int32)
         self.env = env
 
     def observation(self, observation:Dict) -> Dict:

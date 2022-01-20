@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# wandb stuff
+/wandb
+/runs
+/models
+crossing/wandb
+crossing/runs
+crossing/models
