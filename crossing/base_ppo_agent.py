@@ -2,6 +2,7 @@ import os
 from typing import Optional
 
 import einops
+from einops.layers.torch import Rearrange
 import gym
 from gym_minigrid.wrappers import FullyObsWrapper
 import stable_baselines3 as sb3
@@ -11,7 +12,7 @@ import torch.nn as nn
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper
+from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, DeterministicEnvWrappper, ActionWrapper
 
 class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
     def __init__(
@@ -22,34 +23,42 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
         num_channels: Optional[int] = 32,
     ):
 
-        num_embeddings = len(set(observation_space.sample().flatten()))
         super().__init__(observation_space, feature_dim)
 
-        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.num_embeddings = 4
+        embedding_dim=4
+
+        # self.embedding = nn.Embedding(self.num_embeddings, embedding_dim)
 
         self.image_conv = nn.Sequential(
-            nn.Conv2d(embedding_dim, num_channels, kernel_size=2),
+            nn.Conv2d(embedding_dim, num_channels, kernel_size=7),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(num_channels, 2*num_channels, kernel_size=2),
+            Rearrange('b c h w -> b (c h w)'),
+            nn.Linear(num_channels, feature_dim),
             nn.ReLU(),
-            nn.Conv2d(2*num_channels, 4*num_channels, kernel_size=2),
-            nn.ReLU()
         )
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         b, h, w = observations.shape
-        obs = self.embedding(einops.rearrange(observations.int(), 'b h w -> b (h w)'))
-        obs = einops.rearrange(obs, 'b (h w) c -> b c h w', h=h, w=w)
+
+        # one-hot
+        obs = nn.functional.one_hot(observations.long()).float()
+        obs = einops.rearrange(obs, 'b h w c -> b c h w')
+        # obs = self.embedding(einops.rearrange(observations.int(), 'b h w -> b (h w)'))
+        # obs = einops.rearrange(obs, 'b (h w) c -> b c h w', h=h, w=w)
         obs = self.image_conv(obs)
-        obs = einops.rearrange(obs, 'b c h w -> b (c h w)')
         return obs
 
+
+
+
 # os.environ["WANDB_MODE"] = "offline"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 config = {
+    "constant_env":False,
     "policy_type": "MlpPolicy",
-    "total_timesteps": 1000000,
+    "total_timesteps": 10000000,
     "env_name": "MiniGrid-SimpleCrossingS9N1-v0",
     "policy_kwargs": dict(
         features_extractor_class=EmbeddingFeatureExtractor,
@@ -59,15 +68,22 @@ config = {
     "ent_coef": 0.01,
     "embedding_dim": 128,
     "num_channels": 128,
-    "network_dim": 128,
+    'feature_dim': 512,
+    "network_dim": 512,
     'n_epochs':4,
     'learning_rate':0.0001,
 }
-config['policy_kwargs']['features_extractor_kwargs'] = dict(embedding_dim=config['embedding_dim'], feature_dim=4*config['num_channels'], num_channels=config['num_channels'])
-config['policy_kwargs']['net_arch'] = [dict(pi=[512, config['network_dim']], vf=[512, config['network_dim']])]
+
+
+
+config['policy_kwargs']['features_extractor_kwargs'] = dict(embedding_dim=config['embedding_dim'], feature_dim=config['feature_dim'], num_channels=config['num_channels'])
+config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
 env = gym.make(config['env_name'])
 env = MyFullWrapper(env)
+if config['constant_env']:
+    env = DeterministicEnvWrappper(env)
+env = ActionWrapper(env)
 
 run = wandb.init(
     project="MiniGrid-Crossing",
@@ -88,6 +104,7 @@ model = sb3.PPO(
     verbose=1, 
     tensorboard_log=f"runs/{run.id}",
 )
+
 model.learn(
     total_timesteps=config["total_timesteps"],
     callback=WandbCallback(

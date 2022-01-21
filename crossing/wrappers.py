@@ -162,10 +162,15 @@ class MyFullWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.env = env
 
-        self.observation_space = gym.spaces.Box(0, 10, (7,7,), dtype=np.int32)
+        # self.observation_space = gym.spaces.Box(0, 10, (7,7,), dtype=np.int32)
+        self.observation_space = gym.spaces.Box(0, 1, (7,7,), dtype=np.int64)
     
     def observation(self, observation):
         obs = observation['image'][1:-1,1:-1,0]
+
+        # experimental
+        obs[self.env.agent_pos[0]-1, self.env.agent_pos[1]-1] = 0
+        obs[-1,-1] = 3  
 
         return obs
 
@@ -180,3 +185,27 @@ class FlatWrapper(gym.ObservationWrapper):
         for key in observation:
             observation[key] = einops.rearrange(observation[key], 'H W -> (H W)')
         return observation
+
+class DeterministicEnvWrappper(gym.Wrapper):
+    def __init__(self, env, seed=1337):
+        super().__init__(env)
+        self.env = env
+        self.seed = seed
+        self.env.seed(seed)
+
+    def reset(self):
+        self.env.seed(self.seed)
+        return self.env.reset()
+
+class ActionWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.env = env
+        self.action_space = gym.spaces.Discrete(4)
+    
+    def step(self, action):
+
+        while self.env.agent_dir != action:
+            self.env.step(0) # turn left until we face the right direction
+        
+        return self.env.step(2) # step forward
