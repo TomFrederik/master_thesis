@@ -7,6 +7,7 @@ import gym
 from gym_minigrid.wrappers import FullyObsWrapper
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 class MultiViewWrapper(gym.ObservationWrapper):
     def __init__(
@@ -158,16 +159,13 @@ class MyFullFlatWrapper(gym.ObservationWrapper):
 
 class MyFullWrapper(gym.ObservationWrapper):
     def __init__(self, env):
-        env = FullyObsWrapper(env) #TODO refactor this
         super().__init__(env)
         self.env = env
 
-        # self.observation_space = gym.spaces.Box(0, 10, (7,7,), dtype=np.int32)
         self.observation_space = gym.spaces.Box(0, 1, (7,7,), dtype=np.int64)
     
     def observation(self, observation):
-        obs = observation['image'][1:-1,1:-1,0]
-
+        obs = observation['image'][1:-1,1:-1,0].astype(np.int64)
         # experimental
         obs[self.env.agent_pos[0]-1, self.env.agent_pos[1]-1] = 0
         obs[-1,-1] = 3  
@@ -197,15 +195,69 @@ class DeterministicEnvWrappper(gym.Wrapper):
         self.env.seed(self.seed)
         return self.env.reset()
 
-class ActionWrapper(gym.Wrapper):
+class StepWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.env = env
         self.action_space = gym.spaces.Discrete(4)
     
     def step(self, action):
+        self.env.step_count += 1
 
-        while self.env.agent_dir != action:
-            self.env.step(0) # turn left until we face the right direction
+        reward = 0
+        done = False
+
+
+        # get hypothetical next cell
+        next_cell = list(self.env.agent_pos)
+        if action == 0: # down
+            next_cell[0] += 1
+        elif action == 1: # up
+            next_cell[0] -= 1
+        elif action == 2: # right
+            next_cell[1] += 1
+        elif action == 3: # left
+            next_cell[1] -= 1
+        else:
+            assert False, "unknown action"
+        next_cell = tuple(next_cell)
+
+        # Get the contents of the next cell
+        next_content = self.env.grid.get(*next_cell)
+
+        # Move forward
+        if next_content == None or next_content.can_overlap():
+            self.env.agent_pos = next_cell
+        if next_content != None and next_content.type == 'goal':
+            done = True
+            reward = self.env._reward()
+        if next_content != None and next_content.type == 'lava':
+            done = True
+
+        if self.env.step_count >= self.env.max_steps:
+            done = True
+
+        obs = self.env.gen_obs()
+
+        return obs, reward, done, {}
+
+class OneHotActionToIndex(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.env = env
+    
+    def step(self, action):
+        return self.env.step(np.argmax(action))
+
+class OneHotObs(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.env = env
+        self.observation_space = gym.spaces.Box(0, 1, (4, *env.observation_space.shape), dtype=np.float32)
+    
+    def observation(self, observation):
+        observation = torch.nn.functional.one_hot(torch.from_numpy(observation), 4)
+
+        observation = einops.rearrange(observation, 'h w c -> c h w').numpy()
         
-        return self.env.step(2) # step forward
+        return observation

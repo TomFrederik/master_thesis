@@ -12,7 +12,7 @@ import torch.nn as nn
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, DeterministicEnvWrappper, ActionWrapper
+from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, DeterministicEnvWrappper, StepWrapper
 
 class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
     def __init__(
@@ -80,10 +80,11 @@ config['policy_kwargs']['features_extractor_kwargs'] = dict(embedding_dim=config
 config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
 env = gym.make(config['env_name'])
+env = StepWrapper(env)
+env = FullyObsWrapper(env)
 env = MyFullWrapper(env)
 if config['constant_env']:
     env = DeterministicEnvWrappper(env)
-env = ActionWrapper(env)
 
 run = wandb.init(
     project="MiniGrid-Crossing",
