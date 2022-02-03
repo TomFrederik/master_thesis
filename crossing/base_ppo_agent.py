@@ -56,9 +56,9 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 config = {
-    "constant_env":False,
+    "constant_env":True,
     "policy_type": "MlpPolicy",
-    "total_timesteps": 10000000,
+    "total_timesteps": 40000,
     "env_name": "MiniGrid-SimpleCrossingS9N1-v0",
     "policy_kwargs": dict(
         features_extractor_class=EmbeddingFeatureExtractor,
@@ -113,4 +113,6 @@ model.learn(
         verbose=2,
     ),
 )
+
+model.save("PPO")
 run.finish()
