@@ -56,9 +56,9 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 config = {
-    "constant_env":True,
+    "constant_env":False,
     "policy_type": "MlpPolicy",
-    "total_timesteps": 40000,
+    "total_timesteps": 500000,
     "env_name": "MiniGrid-SimpleCrossingS9N1-v0",
     "policy_kwargs": dict(
         features_extractor_class=EmbeddingFeatureExtractor,
@@ -114,5 +114,6 @@ model.learn(
     ),
 )
 
-model.save("PPO")
+model_name = "PPO" if config['constant_env'] else "PPO_changing"
+model.save(model_name)
 run.finish()

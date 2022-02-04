@@ -8,16 +8,13 @@ EPS = 1e-10
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-CONSTANT_ENV = False
+CONSTANT_ENV = True
 
 data_file = "ppo_const_env_experience.npz" if CONSTANT_ENV else "ppo_changing_env_experience.npz"
 checkpoint_path = 'Crossing-dVAE/3h8l30p7/checkpoints/last.ckpt' if CONSTANT_ENV else 'Crossing-dVAE/{}/checkpoints/last.ckpt'
 results_file = "A_const.npz" if CONSTANT_ENV else "A_changing.npz"
 repr_model = dVAE.load_from_checkpoint(checkpoint_path)
 repr_model.to(device)
-
-# init A to uniform
-A = torch.ones((1024,1024), device=device) / 1024
 
 # set prior over latent #TODO
 prior = torch.ones(1024, device=device) / 1024
@@ -26,6 +23,7 @@ prior = torch.ones(1024, device=device) / 1024
 data = np.load(data_file)
 obs = data['obs']
 done = data['done']
+A = np.load(results_file['A'])
 
 # split trajectories
 stop = np.argwhere(done == 1)
@@ -66,15 +64,3 @@ for traj in tqdm(range(num_trajectories)):
         betas.append(new_beta)
     betas = torch.stack(betas, dim=-1)
     constants = torch.stack(constants, dim=-1)
-
-    # update A
-    A = torch.sum(constants[None, None, :] * A[...,None] * traj_emission_probs[None,...] * torch.einsum('it, jt -> ijt', alphas, betas), dim=-1)
-    
-    # renormalize
-    A = A / torch.sum(A, dim=0)[None,:]
-
-# -> 'problem' is that A is almost perfectly deterministic, except for ~2700 entries which are non-0 and non-1
-# this might only be a result of having the determinstic, fixed environment though.
-print(len(A[(A != 0) & (A != 1)]))
-
-np.savez_compressed(results_file, A=A)

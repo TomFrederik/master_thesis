@@ -17,10 +17,12 @@ from wandb.integration.sb3 import WandbCallback
 from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, DeterministicEnvWrappper, StepWrapper
 
 
-num_trajectories = 1000
-CONSTANT_ENV = True
+CONSTANT_ENV = False
+num_trajectories = 1000 if CONSTANT_ENV else 100000
 
-model = sb3.PPO.load("PPO")
+model_name = "PPO" if CONSTANT_ENV else "PPO_changing"
+data_file = "ppo_const_env_experience" if CONSTANT_ENV else "ppo_changing_env_experience"
+model = sb3.PPO.load("PPO_changing")
 
 # set up environment
 env = gym.make("MiniGrid-SimpleCrossingS9N1-v0")
@@ -42,4 +44,4 @@ for traj in tqdm(range(num_trajectories)):
         obs_list.append(obs)
         done_list.append(int(done))
 
-np.savez_compressed('ppo_const_env_experience', obs=np.array(obs_list), done=np.array(done_list))
+np.savez_compressed(data_file, obs=np.array(obs_list), done=np.array(done_list))

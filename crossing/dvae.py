@@ -84,6 +84,8 @@ class SmallEncoder(nn.Module):
             nn.Conv2d(input_channels, 256, kernel_size=7),
             nn.ReLU(),
             Rearrange('b c h w -> b (c h w)'),
+            # nn.Linear(256, 256),
+            # nn.ReLU(),
             nn.Linear(256, num_vars*codebook_size),
         )
 
@@ -99,6 +101,9 @@ class SmallDecoder(nn.Module):
         self.net = nn.Sequential(
             Rearrange('b n d -> b (n d)'),
             nn.Linear(latent_dim*num_vars, 256),
+            # nn.ReLU(),
+            # nn.Linear(256, 256),
+            nn.ReLU(),
             Rearrange('b d -> b d 1 1'),
             nn.ConvTranspose2d(256, 4, 7, 2),
         )
@@ -270,7 +275,7 @@ class RampBeta(pl.Callback):
         # "We divide the overall loss by 256 × 256 × 3, so that the weight of the KL term
         # becomes β/192, where β is the KL weight."
         # TODO: OpenAI uses 6.6/192 but kinda tricky to do the conversion here... about 5e-4 works for this repo so far... :\
-        t = cos_anneal(0, 5000, 0.0, 5e-4, trainer.global_step)
+        t = cos_anneal(0, 5000, 0.0, 5e-2, trainer.global_step)
         pl_module.quantizer.kld_scale = t
 
 class DecayLR(pl.Callback):
@@ -389,9 +394,9 @@ def cli_main():
     parser.add_argument('--log_freq', type=int, default=10)
     parser.add_argument('--progbar_rate', type=int, default=10)
     # model size
-    parser.add_argument("--num_embeddings", type=int, default=1024, help="vocabulary size; number of possible discrete states per variable")
+    parser.add_argument("--num_embeddings", type=int, default=32, help="vocabulary size; number of possible discrete states per variable")
     parser.add_argument("--embedding_dim", type=int, default=128, help="size of the vector of the embedding of each discrete token")
-    parser.add_argument("--num_variables", type=int, default=1, help="")
+    parser.add_argument("--num_variables", type=int, default=2, help="")
     parser.add_argument("--n_hid", type=int, default=64, help="number of channels controlling the size of the model")
     # dataloader related
     # parser.add_argument("--data_dir", type=str, default='./')
@@ -399,6 +404,7 @@ def cli_main():
     #other args
     parser.add_argument('--log_dir', type=str, default='./')
     parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--constant_env', action='store_true')
     # done!
     args = parser.parse_args()
     # -------------------------------------------------------------------------
@@ -418,7 +424,8 @@ def cli_main():
     print(model.summarize(mode='top'))
 
     # load data
-    data = np.load('ppo_const_env_experience.npz')['obs']
+    data_file = "ppo_const_env_experience.npz" if args.constant_env else "ppo_changing_env_experience.npz"
+    data = np.load(data_file)['obs']
     data = torch.utils.data.TensorDataset(torch.from_numpy(data))
     dataloader = DataLoader(data, batch_size=args.batch_size, num_workers=3)
 

@@ -137,3 +137,7 @@ crossing/runs
 crossing/models
 crossing/results
 Crossing-dVAE/
+
+# data
+*.zip
+*.npz
