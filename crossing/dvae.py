@@ -47,7 +47,6 @@ class SeparateQuantizer(nn.Module):
         hard = self.straight_through if self.training else True
 
         logits = einops.rearrange(logits, 'b (num_variables codebook_size) -> b num_variables codebook_size', codebook_size=self.codebook_size, num_variables=self.num_variables)
-
         soft_one_hot = F.gumbel_softmax(logits, tau=self.temperature, dim=2, hard=hard)
         z_q = torch.stack([soft_one_hot[:,i,:] @ self.embeds[i].weight for i in range(self.num_variables)], dim=1) # (b num_vars embed_dim)
 
@@ -402,7 +401,7 @@ def cli_main():
     # parser.add_argument("--data_dir", type=str, default='./')
     parser.add_argument("--batch_size", type=int, default=100)
     #other args
-    parser.add_argument('--log_dir', type=str, default='./')
+    parser.add_argument('--log_dir', type=str, default='/home/aric/Desktop/Projects/Master Thesis/')
     parser.add_argument('--suffix', type=str, default='')
     parser.add_argument('--constant_env', action='store_true')
     # done!
@@ -424,7 +423,7 @@ def cli_main():
     print(model.summarize(mode='top'))
 
     # load data
-    data_file = "ppo_const_env_experience.npz" if args.constant_env else "ppo_changing_env_experience.npz"
+    data_file = "/home/aric/Desktop/Projects/Master Thesis/ppo_const_env_experience.npz" if args.constant_env else "/home/aric/Desktop/Projects/Master Thesis/ppo_changing_env_experience.npz"
     data = np.load(data_file)['obs']
     data = torch.utils.data.TensorDataset(torch.from_numpy(data))
     dataloader = DataLoader(data, batch_size=args.batch_size, num_workers=3)
