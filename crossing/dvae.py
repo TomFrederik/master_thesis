@@ -81,11 +81,13 @@ class SmallEncoder(nn.Module):
 
         self.net = nn.Sequential(
             nn.Conv2d(input_channels, 256, kernel_size=7),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
             Rearrange('b c h w -> b (c h w)'),
-            # nn.Linear(256, 256),
-            # nn.ReLU(),
-            nn.Linear(256, num_vars*codebook_size),
+            nn.Linear(256, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+            nn.Linear(1024, num_vars*codebook_size),
         )
 
     def forward(self, x):
@@ -99,12 +101,17 @@ class SmallDecoder(nn.Module):
 
         self.net = nn.Sequential(
             Rearrange('b n d -> b (n d)'),
-            nn.Linear(latent_dim*num_vars, 256),
-            # nn.ReLU(),
-            # nn.Linear(256, 256),
+            nn.Linear(latent_dim*num_vars, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+            nn.Linear(1024, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             Rearrange('b d -> b d 1 1'),
-            nn.ConvTranspose2d(256, 4, 7, 2),
+            nn.ConvTranspose2d(256, 16, 7, 2),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.ConvTranspose2d(16, 4, 1, 1),
         )
         
     def forward(self, x):
@@ -218,7 +225,7 @@ class dVAE(pl.LightningModule):
         decay = set()
         no_decay = set()
         whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv2d, torch.nn.ConvTranspose2d)
-        blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.BatchNorm2d, torch.nn.Embedding)
+        blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.BatchNorm2d, torch.nn.BatchNorm1d, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
                 fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
@@ -393,9 +400,9 @@ def cli_main():
     parser.add_argument('--log_freq', type=int, default=10)
     parser.add_argument('--progbar_rate', type=int, default=10)
     # model size
-    parser.add_argument("--num_embeddings", type=int, default=32, help="vocabulary size; number of possible discrete states per variable")
+    parser.add_argument("--num_embeddings", type=int, default=2, help="vocabulary size; number of possible discrete states per variable")
     parser.add_argument("--embedding_dim", type=int, default=128, help="size of the vector of the embedding of each discrete token")
-    parser.add_argument("--num_variables", type=int, default=2, help="")
+    parser.add_argument("--num_variables", type=int, default=10, help="")
     parser.add_argument("--n_hid", type=int, default=64, help="number of channels controlling the size of the model")
     # dataloader related
     # parser.add_argument("--data_dir", type=str, default='./')
