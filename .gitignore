@@ -137,6 +137,7 @@ crossing/runs
 crossing/models
 crossing/results
 Crossing-dVAE/
+MT-ToyTask-Ours/
 
 # data
 *.zip
