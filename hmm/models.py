@@ -1,5 +1,6 @@
 from collections import deque, namedtuple
 import itertools
+import math
 
 import einops
 import einops.layers.torch as layers
@@ -30,10 +31,10 @@ class StatePrior(nn.Module):
         self.state_dim = state_dim
 
         # init prior to uniform distribution
-        self.prior = nn.Parameter(torch.ones(self.state_dim, device=device)) / self.state_dim
+        self.prior = nn.Parameter(torch.ones(self.state_dim, device=device))
         
     def forward(self, batch_size):
-        return einops.repeat(self.prior, 'dim -> batch_size dim', batch_size=batch_size)
+        return einops.repeat(torch.softmax(self.prior, dim=0), 'dim -> batch_size dim', batch_size=batch_size)
 
     def to(self, device):
         self.prior = self.prior.to(device)
@@ -50,10 +51,10 @@ class ActionConditionedTransition(nn.Module):
         self.state_dim = state_dim
         self.num_actions = num_actions
         
-        self.matrices = torch.stack([nn.Parameter(torch.ones((self.state_dim, self.state_dim), device=device)) / self.state_dim for _ in range(self.num_actions)], dim=0)
+        self.matrices = nn.Parameter(torch.ones((self.num_actions, self.state_dim, self.state_dim), device=device))
     
     def forward(self, state, action):
-        return torch.einsum('bi, bij -> bj', state, self.matrices[action])
+        return torch.einsum('bi, bij -> bj', state, torch.softmax(self.matrices[action], dim=-1))
     
     def to(self, device):
         self.matrices = self.matrices.to(device)
@@ -151,14 +152,14 @@ class DiscreteNet(nn.Module):
         recon_loss = torch.logsumexp(recon_loss, dim=-1)
         obs_logits = einops.rearrange(obs_logits, '(batch seq) ... -> batch seq ...', batch=batch_size, seq=seq_len)
         latent_dist = einops.rearrange(latent_dist, '(batch seq) ... -> batch seq ...', batch=batch_size, seq=seq_len)
-        outputs['recon_loss'] = -recon_loss.mean()
+        outputs['recon_loss'] = -recon_loss.mean() #* seq_len # TODO this is not very principled
         outputs['latent_loss'] = latent_loss.mean()
         
         # prior
         state_belief = self.state_prior(batch_size)
         posterior_0 = (state_belief.log() + obs_logits[:,0]).exp()
-        posterior_0 = posterior_0 / posterior_0.sum(dim=1, keepdim=True).detach()
-        prior_loss = discrete_kl(state_belief, posterior_0.log())
+        posterior_0 = posterior_0 / posterior_0.sum(dim=1, keepdim=True)
+        prior_loss = self.kl_balancing_loss(state_belief, posterior_0)
         state_belief = posterior_0
         outputs['prior_loss'] = prior_loss
         
@@ -180,31 +181,30 @@ class DiscreteNet(nn.Module):
             # value_prefix_loss += F.cross_entropy(value_prefix_logits, target_value_prefixes_phi[:,t])
             
             # get the priors for the next state
-            priors = torch.stack(prior_sequences.popleft(), dim=1)[:,0]
+            priors = torch.stack(prior_sequences.popleft(), dim=1)
             prior_sequences.append([])
             
             # get the posterior for the next state
-            state_belief_posterior = (state_belief.log() + obs_logits[:,t]).exp()
+            state_belief_posterior = (priors[:,0].log() + obs_logits[:,t]).exp()
             state_belief_posterior = state_belief_posterior + 1e-10 # TODO: this is very hacky
             state_belief_posterior = state_belief_posterior / state_belief_posterior.sum(dim=1, keepdim=True)
             
             # compute the dynamics loss
-            dyn_loss += self.kl_balancing_loss(priors, state_belief_posterior)
+            dyn_loss += sum(self.kl_balancing_loss(priors[:,i], state_belief_posterior) for i in range(priors.shape[1]))
             
             # set belief to the posterior
             state_belief = state_belief_posterior
-            pass
         
         # take mean of value prefix loss
-        outputs['value_prefix_loss'] = value_prefix_loss / seq_len
+        outputs['value_prefix_loss'] = value_prefix_loss
         
         # take mean of dyn loss
-        outputs["dyn_loss"] = dyn_loss / seq_len
+        outputs["dyn_loss"] = dyn_loss
         
         return outputs
 
     def kl_balancing_loss(self, prior, posterior):
-        return (self.kl_balancing_coeff * discrete_kl(prior.detach(), posterior.log()) + (1 - self.kl_balancing_coeff) * discrete_kl(prior, posterior.detach().log()))
+        return (self.kl_balancing_coeff * discrete_kl(prior, posterior.log().detach()) + (1 - self.kl_balancing_coeff) * discrete_kl(prior.detach(), posterior.log()))
 
     def k_step_extrapolation(self, state_belief, action_sequence, k=None):
         if k is None:
@@ -288,6 +288,7 @@ class LightningNet(pl.LightningModule):
         
         for key, value in outputs.items():
             self.log(f"Training/{key}", value)
+        self.log(f"Training/total_loss", sum(list(outputs.values())))
         
         return sum(list(outputs.values()))
     
@@ -297,6 +298,8 @@ class LightningNet(pl.LightningModule):
         
         for key, value in outputs.items():
             self.log(f"Validation/{key}", value)
+        self.log(f"Validation/total_loss", sum(list(outputs.values())))
+        
         return sum(list(outputs.values()))
     
     def configure_optimizers(self):
@@ -360,6 +363,58 @@ class Encoder(nn.Module):
         out = self.net(x)
         return out
 
+class MLPDecoder(nn.Module):
+    def __init__(self, latent_dim, num_vars, output_channels, width=7) -> None:
+        super().__init__()
+        
+        self.net = nn.Sequential(
+            layers.Rearrange('b n d -> b (n d)'),
+            nn.Linear(latent_dim*num_vars, 1024),
+            nn.GELU(),
+            nn.Linear(1024, 1024),
+            nn.GELU(),
+            nn.Linear(1024, output_channels * (width ** 2)),
+            layers.Rearrange('b (h w) -> b 1 h w', h=width, w=width),
+        )
+    
+    def forward(self, x):
+        return self.net(x)
+
+    def set_bn_eval(self, m):
+        if isinstance(m, nn.modules.batchnorm._BatchNorm):
+            m.eval()
+
+    def set_bn_train(self, m):
+        if isinstance(m, nn.modules.batchnorm._BatchNorm):
+            m.train()
+
+
+class MLPEncoder(nn.Module):
+    def __init__(self, num_vars, codebook_size, width=7) -> None:
+        super().__init__()
+        
+        self.net = nn.Sequential(
+            layers.Rearrange('b c h w -> b (c h w)'),
+            nn.Linear(width ** 2, 1024),
+            nn.GELU(),
+            nn.Linear(1024, 1024),
+            nn.GELU(),
+            nn.Linear(1024, codebook_size*num_vars),
+        )
+    
+    def forward(self, x):
+        return self.net(x)
+
+    def set_bn_eval(self, m):
+        if isinstance(m, nn.modules.batchnorm._BatchNorm):
+            m.eval()
+
+    def set_bn_train(self, m):
+        if isinstance(m, nn.modules.batchnorm._BatchNorm):
+            m.train()
+
+
+
 class Decoder(nn.Module):
 
     def __init__(self, latent_dim=32, num_vars=32, output_channels=3):
@@ -373,11 +428,11 @@ class Decoder(nn.Module):
             nn.Linear(1024, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            layers.Rearrange('b d -> b d 1 1'),
-            nn.ConvTranspose2d(256, 16, 7, 2),
+            layers.Rearrange('b (d h w) -> b d h w', h=1, w=1),
+            nn.ConvTranspose2d(256, 16, 7, 1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.ConvTranspose2d(16, output_channels, 1, 1),
+            nn.Conv2d(16, output_channels, 1, 1),
         )
         
     def forward(self, x):
@@ -402,6 +457,7 @@ class dVAE(nn.Module):
         codebook_size,
         num_variables,
         entropy_scale,
+        mlp=False
     ):
         super().__init__()
         self.num_input_channels = num_input_channels
@@ -409,8 +465,12 @@ class dVAE(nn.Module):
         self.codebook_size = codebook_size
         self.num_variables = num_variables
         
-        self.encoder = Encoder(input_channels=num_input_channels, latent_dim=embedding_dim, codebook_size=codebook_size, num_vars=num_variables)
-        self.decoder = Decoder(latent_dim=embedding_dim, num_vars=num_variables, output_channels=num_input_channels)
+        if mlp:
+            self.encoder = MLPEncoder(num_variables, codebook_size, width=7)
+            self.decoder = MLPDecoder(embedding_dim, num_variables, output_channels=num_input_channels, width=7)
+        else:
+            self.encoder = Encoder(input_channels=num_input_channels, latent_dim=embedding_dim, codebook_size=codebook_size, num_vars=num_variables)
+            self.decoder = Decoder(latent_dim=embedding_dim, num_vars=num_variables, output_channels=num_input_channels)
         self.quantizer = TotalQuantizer(num_variables=num_variables, codebook_size=codebook_size, embedding_dim=embedding_dim, entropy_scale=entropy_scale)
 
     def get_emission_means(self):
@@ -442,18 +502,19 @@ class dVAE(nn.Module):
         return obs_logits, latent_dist, latent_loss
 
     def compute_obs_logits(self, x, emission_means):
-        return - ((emission_means[None] - x[:,None,None]) ** 2).sum(dim=[-3,-2,-1]) / 2
-     
+        return - ((emission_means[None] - x[(slice(None),) + (None,)*self.num_variables]) ** 2).sum(dim=[-3,-2,-1]) / 2
+    
     @torch.no_grad()
     def reconstruct_only(self, x):
-        z = self.encoder(x)
-        z_q, *_ = self.quantizer(z)
-        logits = self.decoder(z_q)
-        b, c, h, w = logits.shape
-        logits = einops.rearrange(logits, 'b c h w -> (b h w) c')
-        x_hat = torch.multinomial(torch.softmax(logits, dim=-1), 1)
-        x_hat = einops.rearrange(x_hat, '(b h w) c -> b h (w c)', b=b, h=h, w=w)
-        return x_hat
+        emission_means = self.get_emission_means()
+        encoded = self.encoder(x)
+        latent_dist, _ = self.quantizer(encoded)
+        latent_dist = sum_factored_logits(latent_dist.log()).exp()
+        # reshape to (batch_size, codebook_size, codebook_size, codebook_size, ...)
+        while len(latent_dist.shape[1:]) < self.num_variables:
+            latent_dist = einops.rearrange(latent_dist, 'b ... (codebook_size rest) -> b ... codebook_size rest', codebook_size=self.codebook_size)
+        recon_means = (latent_dist[..., None, None, None] * emission_means[None]).sum(dim=list(range(1, self.num_variables+1)))
+        return recon_means
     
     @torch.no_grad()
     def decode_only(self, latent_dist):

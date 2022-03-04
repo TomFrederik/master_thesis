@@ -130,6 +130,7 @@ dmypy.json
 
 # wandb stuff
 /wandb
+hmm/wandb
 /runs
 /models
 crossing/wandb

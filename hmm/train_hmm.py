@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 
 import einops
@@ -10,7 +11,7 @@ import wandb
 from torchvision.utils import make_grid
 
 from datasets import SingleTrajToyData
-from models import LightningNet
+from models import LightningNet, sum_factored_logits
 
 class ExtrapolateCallback(pl.Callback):
     def __init__(self, dataset=None, save_to_disk=False, every_n_batches=100):
@@ -52,13 +53,17 @@ class ExtrapolateCallback(pl.Callback):
             self.obs = self.obs.to(pl_module.device)
             self.actions = self.actions.to(pl_module.device)
 
+        # reconstructions
+        recon_means = pl_module.autoencoder.reconstruct_only(self.obs)
+        
+        # extrapolations
         self.obs_logits, latent_dist, latent_loss = pl_module.autoencoder(self.obs)
         self.obs_logits = self.obs_logits[0][None]
 
         self.prior = pl_module.prior(1) # batch size 1
         self.obs_logits = einops.rearrange(self.obs_logits, 'b ... -> b (...)') # flatten over latent states
         self.posterior_0 = (self.prior.log() + self.obs_logits).exp()
-        self.posterior_0 = self.posterior_0 / self.posterior_0.sum(dim=1, keepdim=True).detach()
+        self.posterior_0 = self.posterior_0 / self.posterior_0.sum(dim=1, keepdim=True)
             
         state_belief_prior_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
@@ -66,10 +71,10 @@ class ExtrapolateCallback(pl.Callback):
         vae_input = einops.rearrange(state_belief_prior_sequence, 'b t ... -> (b t) ...')
         
         obs_hat = pl_module.autoencoder.decode_only(vae_input).to('cpu').float()
-        images = torch.stack([(self.obs.to('cpu') * self.sigma) + self.mu, (obs_hat * self.sigma) + self.mu], dim=1).reshape((2*obs_hat.shape[0], *obs_hat.shape[1:]))
+        images = torch.stack([(self.obs.to('cpu') * self.sigma) + self.mu, (recon_means.to('cpu') * self.sigma) + self.mu, (obs_hat * self.sigma) + self.mu], dim=1).reshape((3*obs_hat.shape[0], *obs_hat.shape[1:]))
         
         # log images
-        pl_module.logger.experiment.log({'Extrapolation': wandb.Image(make_grid(images, nrow=2))})
+        pl_module.logger.experiment.log({'Extrapolation': wandb.Image(make_grid(images, nrow=3))})
 
 
 def main(
@@ -88,6 +93,7 @@ def main(
     accumulate_grad_batches,
     entropy_scale,
     gradient_clip_val,
+    mlp_repr,
 ):
     
     assert batch_size == 1, "batch_size > 1 not implemented"
@@ -119,6 +125,7 @@ def main(
         embedding_dim=embedding_dim,
         num_variables=num_variables,
         entropy_scale=entropy_scale,
+        mlp=mlp_repr,
     )
         
     
@@ -145,6 +152,7 @@ def main(
         learning_rate=learning_rate,
         entropy_scale=entropy_scale,
         gradient_clip_val=gradient_clip_val,
+        mlp=mlp_repr,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
@@ -183,6 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--codebook_size', type=int, default=10)
     parser.add_argument('--embedding_dim', type=int, default=32)
     parser.add_argument('--entropy_scale', type=float, default=1)
+    parser.add_argument('--mlp_repr', action='store_true')
     
     # training args
     parser.add_argument('--learning_rate', type=float, default=0.001)
