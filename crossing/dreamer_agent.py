@@ -7,7 +7,7 @@ import gym
 
 import gym_minigrid as mini
 
-from wrappers import MyFullWrapper, StepWrapper, DeterministicEnvWrappper, OneHotObs, OneHotActionToIndex
+from wrappers import MyFullWrapper, StepWrapper, DeterministicEnvWrappper, OneHotObs, OneHotActionToIndex, NormalizeObservations
 
 from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction
 from dreamerv2.training.config import MinAtarConfig
@@ -37,8 +37,8 @@ def main(args):
     env = StepWrapper(env)
     env = mini.wrappers.FullyObsWrapper(env)
     env = MyFullWrapper(env)
-    env = OneHotObs(env)
-    if args.deterministic: #TODO
+    env = NormalizeObservations(env)
+    if args.constant_env: #TODO
         env = DeterministicEnvWrappper(env)
     env = OneHotActionToIndex(env)
 
@@ -48,6 +48,7 @@ def main(args):
     action_dtype = np.float32
     batch_size = args.batch_size
     seq_len = args.seq_len
+    print(f"{obs_shape = }")
 
     config = MinAtarConfig( #TODO
         env="MiniGrid-SimpleCrossingS9N1-v0",
@@ -61,7 +62,7 @@ def main(args):
     )
 
     config_dict = config.__dict__
-    config_dict['deterministic'] = args.deterministic
+    config_dict['constant_env'] = args.constant_env
     trainer = Trainer(config, device)
     evaluator = Evaluator(config, device)
 
@@ -129,13 +130,13 @@ def main(args):
 
 if __name__ == "__main__":
 
-    """there are tonnes of HPs, if you want to do an ablation over any particular one, please add if here"""
+    """there are tonnes of HPs, if you want to do an ablation over any particular one, please add it here"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", type=str, default='0', help='Experiment ID')
-    parser.add_argument('--seed', type=int, default=123, help='Random seed')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--device', default='cuda', choices=['cuda', 'cpu'])
     parser.add_argument('--batch_size', type=int, default=50, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=50, help='Sequence Length (chunk length)')
-    parser.add_argument('--deterministic', action='store_true', help="Whether to change environment layout on reset")
+    parser.add_argument('--constant_env', action='store_true', help="Whether to change environment layout on reset")
     args = parser.parse_args()
     main(args)

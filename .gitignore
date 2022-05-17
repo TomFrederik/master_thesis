@@ -130,15 +130,17 @@ dmypy.json
 
 # wandb stuff
 /wandb
-hmm/wandb
 /runs
 /models
 crossing/wandb
 crossing/runs
 crossing/models
 crossing/results
+crossing/MT-ToyTask-Dreamer
 Crossing-dVAE/
 MT-ToyTask-Ours/
+hmm/MT-ToyTask-Ours
+hmm/wandb
 
 # data
 *.zip

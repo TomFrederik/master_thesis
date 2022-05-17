@@ -47,7 +47,9 @@ def main(
             done_list.append(int(done))
         if normalized_float:
             obs = (obs - 1.5) / 3
-        obs_list.append(obs)    
+        action, _states = model.predict(obs)
+        obs_list.append(obs)
+        action_list.append(action)    
 
     np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), done=np.array(done_list))
 
