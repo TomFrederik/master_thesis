@@ -270,17 +270,17 @@ class ValuePrefixPredictor(nn.Module):
 class DiscreteNet(nn.Module):
     def __init__(
         self,
-        state_prior,
+        state_prior: StatePrior,
         transition,
-        value_prefix_predictor,
+        value_prefix_predictor: ValuePrefixPredictor,
         emission,
-        kl_balancing_coeff,
-        l_unroll,
-        discount_factor,
+        kl_balancing_coeff: float,
+        l_unroll: int,
+        discount_factor: float,
         reward_support,
-        use_recon_loss = True,
-        sparsemax = False,
-        sparsemax_k = 30,
+        disable_recon_loss: bool = True,
+        sparsemax: bool = False,
+        sparsemax_k: int = 30,
     ):
         if l_unroll < 1:
             raise ValueError('l_unroll must be at least 1')
@@ -295,7 +295,7 @@ class DiscreteNet(nn.Module):
         self.l_unroll = l_unroll
         self.discount_factor = discount_factor
         self.reward_support = reward_support
-        self.use_recon_loss = use_recon_loss
+        self.disable_recon_loss = disable_recon_loss
         self.sparsemax = sparsemax
         self.sparsemax_k = sparsemax_k
 
@@ -307,12 +307,13 @@ class DiscreteNet(nn.Module):
     #     reward_sequence = torch.cat([reward_sequence, torch.zeros((reward_sequence.shape[0], self.l_unroll-1), device=reward_sequence.device)], dim=1)
     #     return F.conv1d(reward_sequence[:,None], self.discount_array[None,None,:])[:,0]
 
-    def compute_posterior_logits(self, prior, state_idcs, obs_frame, dropped):
+    def compute_posterior(self, prior, state_idcs, obs_frame, dropped):
         obs_logits = self.emission(obs_frame, state_idcs)
-        # print(f"{prior.shape = }")
-        # print(f"{obs_logits.shape = }")
-        # print(f"{dropped.shape = }")
-        return prior.log() + (obs_logits[None] * (1-dropped)).sum(dim=-1), obs_logits
+        
+        posterior = prior.clone()
+        posterior[prior > 0] = posterior[prior > 0].log() + (obs_logits[None][prior > 0,:] * (1-dropped)).sum(dim=-1)
+        posterior[prior > 0] = F.softmax(posterior[prior > 0], dim=-1)
+        return posterior, obs_logits
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, terms, dropped, player_pos):
         outputs = dict()
@@ -342,30 +343,19 @@ class DiscreteNet(nn.Module):
         state_belief = self.state_prior(batch_size)
         
         if self.sparsemax:
-            print(f"{state_belief[0] = }")
+            # print(self.state_prior.prior.data)
             state_belief, state_idcs = sparsemax_k(state_belief[0], self.sparsemax_k) 
             #TODO add batch support
             state_belief = state_belief[None]
-            
-            # print(f"{state_belief.shape = }")
-            # print(f"{state_idcs.shape = }")
         else:
             state_belief = F.softmax(state_belief, dim=-1)
             state_idcs = None
 
         prior_entropy = discrete_entropy(state_belief)
-        # obs_logits = self.emission(einops.rearrange(obs_sequence, 'batch seq views ... -> (batch seq) views ...'))
-        # obs_logits = einops.rearrange(obs_logits, '(batch seq) views ... -> batch seq views (...)', batch=batch_size, seq=seq_len, views=channels) # flatten over latent states
-        
-
-        # p = state_belief
-        # entropy = -(p[p!=0] * p[p!=0].log()).sum(dim=-1)
-        # print(f't = {0}, entropy = {entropy}')
 
         # unnormalized p(z_t|x_t)
         # print(state_belief)
-        posterior_logits, obs_logits_0 = self.compute_posterior_logits(state_belief, state_idcs, obs_sequence[:,0], dropped[:,0])
-        posterior_0 = F.softmax(posterior_logits, dim=-1)
+        posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_idcs, obs_sequence[:,0], dropped[:,0])
         
         posterior_entropy = discrete_entropy(posterior_0)        
 
@@ -387,9 +377,6 @@ class DiscreteNet(nn.Module):
             value_prefix_means, 
             obs_sequence
         )
-        # print(posterior_belief_sequence)
-        # print(f"{posterior_belief_sequence.shape = }") #(batch, seq, k)
-        # print(f"{posterior_idcs_sequence.shape = }")
         
         obs_logits_sequence = torch.cat([obs_logits_0[:,None], obs_logits_sequence], dim=1)
         
@@ -400,8 +387,6 @@ class DiscreteNet(nn.Module):
             value_prefix_loss = self.compute_vp_loss(value_prefix_pred, target_value_prefixes) # TODO if we use longer rollout need to adapt this
         else:
             value_prefix_loss = 0
-        # print(f"{value_prefix_loss = }")
-        # raise NotImplementedError("implement process sequence for sparse stuff")
         
         # log the losses
         outputs['prior_loss'] = prior_loss
@@ -449,15 +434,8 @@ class DiscreteNet(nn.Module):
             prior_idcs = obj['idcs']
             prior_sequences.append({"belief": [], "idcs": []})
             
-            # compute entropy of last prior
-            # p = priors[:,-1]
-            # entropy = -(p[p!=0] * p[p!=0].log()).sum(dim=-1)
-            # print(f't = {t}, entropy = {entropy}')
-            
             # get the posterior for the next state
-            priors[:,-1][priors[:,-1] < 1e-8] = 1e-8 # TODO do this less hacky
-            state_belief_posterior_logits, obs_logits = self.compute_posterior_logits(priors[:,-1], prior_idcs[-1], obs_sequence[:,t], dropped[:,t])
-            state_belief_posterior = F.softmax(state_belief_posterior_logits, dim=-1)
+            state_belief_posterior, obs_logits = self.compute_posterior(priors[:,-1], prior_idcs[-1], obs_sequence[:,t], dropped[:,t])
             # compute the dynamics loss
             dyn_loss = dyn_loss + sum(self.kl_balancing_loss(priors[:,i], state_belief_posterior) for i in range(priors.shape[1]))
             
@@ -487,8 +465,8 @@ class DiscreteNet(nn.Module):
         # obs_logits_sequence has shape (num_active_state, seq_len, num_views)
         # dropped has shape (batch, seq_len, num_views)
         recon_loss = 0
-        if self.use_recon_loss:
-            recon_loss = (-(1-dropped)[:,:,None,:] * posterior_belief_sequence[:,:,:,None] * einops.rearrange(obs_logits_sequence,"num_states seq views -> seq num_states views")[None]).sum(dim=[1,-1]).mean()
+        if not self.disable_recon_loss:
+            recon_loss = (-(1-dropped)[:,:,None,:] * posterior_belief_sequence[:,:,:,None] * einops.rearrange(obs_logits_sequence,"num_states seq views -> seq num_states views")[None]).sum(dim=[2,-1]).mean()
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):
@@ -508,6 +486,8 @@ class DiscreteNet(nn.Module):
             state_belief = state_belief / state_belief.sum(dim=-1, keepdim=True)
             state_belief_prior_sequence.append(state_belief)
             state_idcs_prior_sequence.append(state_idcs)
+        # print(state_belief_prior_sequence)
+        # print(state_idcs_prior_sequence)
         return torch.stack(state_belief_prior_sequence, dim=1), torch.stack(state_idcs_prior_sequence, dim=0)
 
     ##########################################################
@@ -558,7 +538,7 @@ class LightningNet(pl.LightningModule):
         # factorized_transition,
         transition_mode,
         reward_support,
-        use_recon_loss = True,
+        disable_recon_loss = False,
         sparsemax = False,
         sparsemax_k = 30,
         attention_batch_size = -1,
@@ -592,7 +572,7 @@ class LightningNet(pl.LightningModule):
             l_unroll,
             discount_factor,
             reward_support,
-            use_recon_loss,
+            disable_recon_loss,
             sparsemax,
             sparsemax_k,
         )
@@ -602,7 +582,7 @@ class LightningNet(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         outputs = self(*batch)
-        total_loss = sum(list(outputs.values()))
+        total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Training/{key}", value)
         self.log(f"Training/total_loss", total_loss)
@@ -613,7 +593,7 @@ class LightningNet(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         outputs = self(*batch)
-        total_loss = sum(list(outputs.values()))
+        total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Validation/{key}", value)
         self.log(f"Validation/total_loss", total_loss)
@@ -690,10 +670,6 @@ class Decoder(nn.Module):
         # init
         # torch.nn.init.kaiming_uniform_(self.net[3].weight, mode='fan_out')
         # torch.nn.init.kaiming_uniform_(self.net[5].weight, mode='fan_out')
-        # torch.nn.init.zeros_(self.net[1].bias)
-        # torch.nn.init.zeros_(self.net[3].bias)
-        # torch.nn.init.zeros_(self.net[5].bias)
-        # torch.nn.init.zeros_(self.net[7].bias)
         
         
     def forward(self, x):

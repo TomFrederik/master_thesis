@@ -84,8 +84,7 @@ class ExtrapolateCallback(pl.Callback):
         ent = ent.sum()
         print(f"0: prior entropy: {ent:.4f}")
         
-        posterior_logits, _ = pl_module.network.compute_posterior_logits(self.prior, self.state_idcs, self.obs[:,0], self.dropped[:,0])
-        self.posterior_0 = F.softmax(posterior_logits, dim=-1)
+        self.posterior_0, _ = pl_module.network.compute_posterior(self.prior, self.state_idcs, self.obs[:,0], self.dropped[:,0])
         print(f"{self.posterior_0 = }")
         ent = -(self.posterior_0 * self.posterior_0.log())
         ent[self.posterior_0 == 0] = 0
@@ -106,8 +105,8 @@ class ExtrapolateCallback(pl.Callback):
         # displ[displ > 0.5] = 1
         # displ = displ.reshape(displ.shape[0], displ.shape[1], 7,7)
         # print(displ)
-        print(f"{state_belief_prior_sequence = }")
-        print(f"{state_idcs_prior_sequence = }")
+        # print(f"{state_belief_prior_sequence = }")
+        # print(f"{state_idcs_prior_sequence = }")
         
         
         emission_input = einops.rearrange(state_belief_prior_sequence, 'b t ... -> (b t) ...')
@@ -151,7 +150,7 @@ def main(
     max_datapoints,
     transition_mode,
     track_grad_norm,
-    use_recon_loss,
+    disable_recon_loss,
     attention_batch_size,
     sparsemax,
     sparsemax_k,
@@ -226,7 +225,7 @@ def main(
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         transition_mode=transition_mode,
         reward_support=RewardSupport(0,1,num_values),
-        use_recon_loss=use_recon_loss,
+        disable_recon_loss=disable_recon_loss,
         attention_batch_size=attention_batch_size,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
@@ -256,7 +255,7 @@ def main(
         test_only_dropout=test_only_dropout,
         max_datapoints=max_datapoints,
         transition_mode=transition_mode,
-        use_recon_loss=use_recon_loss,
+        disable_recon_loss=disable_recon_loss,
         attention_batch_size=attention_batch_size,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
@@ -307,10 +306,10 @@ if __name__ == '__main__':
     parser.add_argument('--discount_factor', type=float, default=0.99)
     parser.add_argument('--num_variables', type=int, default=10)
     parser.add_argument('--codebook_size', type=int, default=2)
-    parser.add_argument('--embedding_dim', type=int, default=32)
+    parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--mlp_repr', action='store_true')
     parser.add_argument('--transition_mode', type=str, default='matrix')
-    parser.add_argument('--use_recon_loss', action='store_true')
+    parser.add_argument('--disable_recon_loss', action='store_true')
     parser.add_argument('--attention_batch_size', type=int, default=-1)
     parser.add_argument('--sparsemax', action='store_true')
     parser.add_argument('--sparsemax_k', type=int, default=30)

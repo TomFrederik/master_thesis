@@ -9,15 +9,18 @@ def discrete_kl(p, q):
     if p.shape != q.shape:
         raise ValueError("p and q must have the same shape")
     out = torch.zeros_like(p)
+    
     out[p == 0] = 0
-    out[p != 0] = p[p != 0] * (torch.log(p[p != 0]) - q.log()[p != 0])
-    out = out.sum(dim=1).mean()
+    out[p != 0] = p[p != 0] * (torch.log(p[p != 0]) - torch.log(q[p != 0]))
+    out = out[p != 0].sum() / p.shape[0]
     return out
 
+
 def discrete_entropy(p):
-    out = p.log()
+    out = torch.zeros_like(p)
     out[p == 0] = 0
-    return -(out * p).sum(dim=-1).mean()
+    out[p != 0] = p[p != 0].log()
+    return -(out[p != 0] * p[p != 0]).sum(dim=-1).mean()
 
 def batched_query_attention(keys, queries, query_batch_size=-1):
     if query_batch_size == -1:
@@ -35,21 +38,3 @@ def attention(keys, queries):
 
 def mem_efficient_attention(keys, queries, query_chunk_size=1024, key_chunk_size=4096):
     return efficient_dot_product_attention_pt(queries, keys, query_chunk_size=query_chunk_size, key_chunk_size=key_chunk_size)
-
-
-###
-# tests
-###
-
-def test_discrete_kl():
-    p = torch.tensor([[0.5, 0.5]])
-    q = torch.tensor([[0.5, 0.5]])
-    kl = discrete_kl(p, q)
-    assert kl.item() == 0.0
-    
-    p = torch.tensor([[0.5, 0.5]])
-    q = torch.tensor([[0.1, 0.9]])
-    kl = discrete_kl(p, q)
-    assert torch.isclose(kl, torch.tensor([math.log(0.5) - 0.5 * (math.log(0.1) + math.log(0.9))]))
-    
-test_discrete_kl()

@@ -5,6 +5,7 @@ from typing import Any, TypeVar
 from entmax import sparsemax
 import pytest
 import torch
+import torch.nn.functional as F
 
 Tensor = TypeVar('Tensor', bound=torch.Tensor)
 
@@ -122,9 +123,9 @@ def sparsemax_k(logits, k, dim=-1):
     """
     #TODO add batch support
     topk_bit_vecs, topk_state_idcs = binary_topk(logits, k)
-    print(f"{logits = }")
+    # print(f"{logits = }")
     topk_logits = logits[torch.arange(len(logits)), topk_bit_vecs].sum(dim=-1)
-    print('topk_logits', topk_logits)
+    # print(f"{topk_logits = }")
     out = sparsemax(topk_logits, dim=dim)
     
     return out, topk_state_idcs
@@ -193,12 +194,13 @@ def sparse_transition(in_features, out_features, in_module, out_module, state_be
         # batch it
         
     # print(f'{(state_beliefs @ selected_out_features).shape = }')
-    
-    prior_beliefs = (state_beliefs @ selected_out_features) @ in_features.T
+    # print(f'{state_beliefs = }')
+    prior_beliefs = state_beliefs @ F.softmax((selected_out_features @ in_features.T), dim=-1)
+    # print(f'{prior_beliefs = }')
     
     # Hm I think this^ is very wrong. I'm just multiplying probabilities with logits here.
     
-    print(f'{prior_beliefs.shape = }')
+    # print(f'{prior_beliefs.shape = }')
     # TODO support chunking this or something
     # Okay this is a big problem right now. Posterior beliefs is a dist over the joint
     # i.e. it is NOT factorized into a distribution over variables
@@ -207,7 +209,7 @@ def sparse_transition(in_features, out_features, in_module, out_module, state_be
     # The solution: just apply topk to the joint
     # TODO am I sure that the indices are the same as the indices I compute by hand?
     values, indices = torch.topk(prior_beliefs, k=len(state_idcs), dim=dim)
-    print(f"{values = }")
+    # print(f'{values = }')
     out = sparsemax(values, dim=dim)
     indices = indices.squeeze()
     # print(out)
