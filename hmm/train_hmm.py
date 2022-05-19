@@ -156,6 +156,7 @@ def main(
     sparsemax_k,
     disable_vp,
     action_layer_dims,
+    max_len,
 ):
     
     if batch_size > 1:
@@ -171,6 +172,7 @@ def main(
             dropout=dropout,
             max_datapoints=max_datapoints,
             test_only_dropout=test_only_dropout,
+            max_len=max_len,
         )
     
     pl.seed_everything(seed)
@@ -261,6 +263,7 @@ def main(
         sparsemax_k=sparsemax_k,
         disable_vp=disable_vp,
         action_layer_dims=action_layer_dims,
+        max_len=max_len,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
