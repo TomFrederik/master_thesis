@@ -743,7 +743,6 @@ class EmissionModel(nn.Module):
                 # self.precomputed_states[state_idx] = convert_state_idx_to_bit_vector(state_idx, self.num_variables, device)
         states = torch.stack(states, dim=0)
         embeds = torch.einsum("ktc,tce->kte", states, self.latent_embedding)
-        print(f"{embeds.shape = }")
         return self.decoder(embeds)
 
     def get_emission_means(self):
