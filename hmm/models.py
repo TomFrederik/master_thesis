@@ -330,7 +330,7 @@ class DiscreteNet(nn.Module):
         
         return posterior, obs_logits
 
-    def forward(self, obs_sequence, action_sequence, value_prefix_sequence, terms, dropped, player_pos):
+    def forward(self, obs_sequence, action_sequence, value_prefix_sequence, dropped):
         outputs = dict()
         
         batch_size, seq_len, channels, h, w = obs_sequence.shape
@@ -588,8 +588,8 @@ class LightningNet(pl.LightningModule):
             kl_scaling,
         )
     
-    def forward(self, obs, actions, value_prefixes, terms, dropped, player_pos):
-        return self.network(obs, actions, value_prefixes, terms, dropped, player_pos)
+    def forward(self, obs, actions, value_prefixes, dropped):
+        return self.network(obs, actions, value_prefixes, dropped)
     
     def training_step(self, batch, batch_idx):
         outputs = self(*batch)

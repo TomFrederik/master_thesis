@@ -13,7 +13,7 @@ from torchvision.utils import make_grid
 
 import torch.nn.functional as F
 
-from datasets import construct_train_val_data
+from datasets import construct_train_val_data, TransitionData
 from models import LightningNet, sum_factored_logits
 from sparsemax_k import sparsemax_k
 
@@ -32,7 +32,7 @@ class ExtrapolateCallback(pl.Callback):
         self.every_n_batches = every_n_batches
         self.save_to_disk = save_to_disk
         self.initial_loading = False
-        obs, actions, vp, terms, dropped, player_pos = dataset.get_no_drop(0)
+        obs, actions, vp, dropped = dataset.get_no_drop(0)
         self.obs = torch.from_numpy(obs)
         self.actions = torch.from_numpy(actions[None])
         self.dropped = torch.from_numpy(dropped[None])
@@ -160,22 +160,6 @@ def main(
     max_len,
 ):
     
-    if batch_size > 1:
-        raise NotImplementedError
-        data_cls = BatchTrajToyData
-        data_kwargs = dict(seq_len=12)
-    else:
-        data_cls = construct_train_val_data
-        data_kwargs = dict(
-            multiview=multiview,
-            null_value=null_value,
-            percentages=percentages,
-            dropout=dropout,
-            max_datapoints=max_datapoints,
-            test_only_dropout=test_only_dropout,
-            max_len=max_len,
-        )
-    
     pl.seed_everything(seed)
     
     # get data path
@@ -186,11 +170,21 @@ def main(
     data_path = os.path.join(data_path, file_name)
     
     # init dataset and dataloader
-    train_val_split = 0.9
-    train_data, val_data = data_cls(data_path, train_val_split=train_val_split, **data_kwargs)
+    data_kwargs = dict(
+        multiview=multiview,
+        null_value=null_value,
+        percentages=percentages,
+        dropout=dropout,
+        max_datapoints=max_datapoints,
+        test_only_dropout=test_only_dropout,
+        train_val_split = 0.9,
+    )
+    
+    
+    train_data, val_data = construct_train_val_data(data_path, **data_kwargs)
             
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)#, collate_fn=TransitionData.collate_fn)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)#, collate_fn=TransitionData.collate_fn)
     
     # settings for toy env
     num_actions = 4
@@ -324,8 +318,8 @@ if __name__ == '__main__':
     parser.add_argument('--action_layer_dims', type=int, nargs='*', default=None)
     
     # training args
-    parser.add_argument('--learning_rate', type=float, default=0.001)
-    parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--learning_rate', type=float, default=0.0002)
+    parser.add_argument('--weight_decay', type=float, default=0.000001)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--accumulate_grad_batches', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=0)

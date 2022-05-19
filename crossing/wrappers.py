@@ -9,6 +9,134 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+
+## NOTE maybe use this for transition tuples instead?
+# class FunctionalMVW: # used to map recorded obs to multiple views, without needing an env object
+#     def __init__(
+#         self,
+#         percentages: Optional[List[float]] = None,
+#         dropout: Optional[float] = 0.0,
+#         null_value: Optional[int] = 1,
+#     ):
+#         if percentages is None:
+#             percentages = [0.7, 0.7]
+        
+#         # check input
+#         if any(p < 0 for p in percentages) or any(p > 1 for p in percentages):
+#             raise ValueError("percentages must be values in [0,1]")
+#         if sum(percentages) < 1:
+#             raise ValueError("percentages must sum to at least 1")
+#         if dropout < 0 or dropout >= 1:
+#             raise ValueError("dropout must be a value in [0,1)")
+        
+#         self.percentages = percentages
+#         self.null_value = null_value
+#         self.initialized = False
+#         self.dropout = dropout
+    
+#     @property
+#     def num_views(self):
+#         return len(self.percentages)
+
+#     def observation(self, observation, force_no_drop: Optional[bool] = False) -> Dict:
+#         if not self.initialized:
+#             self.view_to_loc = self._init_views(observation)
+
+#         output = self._construct_views(observation, force_no_drop)
+
+#         # ### TESTING HALF-HALF Split
+#         # view_1 = observation.copy()
+#         # view_2 = observation.copy()
+#         # view_1[:, :3] = self.null_value
+#         # view_2[:, 3:] = self.null_value
+        
+#         # views = dict(
+#         #     view_1=view_1,
+#         #     view_2=view_2,
+#         # )
+#         # print(view_1[0])
+#         # print(view_2[0])
+        
+#         return output
+
+#     def _init_views(self, observation) -> Dict:
+#         self.locations = list(itertools.product(range(observation.shape[0]), range(observation.shape[1])))
+
+#         # Make sure that every location appears at least once
+#         shuffled_idcs = np.random.permutation(np.arange(len(self.locations)))
+#         not_taken = set(self.locations[idx] for idx in shuffled_idcs)
+
+#         # populate each view with objects so that each object appears at least once
+#         cur_view = 0
+#         view_to_loc = dict()
+#         while len(not_taken) > 0:
+#             if cur_view not in view_to_loc: # init view
+#                 view_to_loc[cur_view] = set()
+#             if ceil(self.percentages[cur_view] * len(self.locations)) <= len(view_to_loc[cur_view]): # view is full
+#                 cur_view += 1
+#                 continue
+#             else: # add an object to the view
+#                 view_to_loc[cur_view].add(not_taken.pop())
+        
+#         # now that every location appears at least once, we randomly sample to fill up the remaining
+#         # object slots for all views
+#         for view in range(len(self.percentages)):
+#             if view not in view_to_loc:
+#                 view_to_loc[view] = set()
+#             max_obj = ceil(self.percentages[cur_view] * len(self.locations)) 
+#             if max_obj <= len(view_to_loc[view]):
+#                 continue # this view is already complete
+#             else:
+#                 free_space_in_view = max_obj - len(view_to_loc[view])
+                
+#                 # set up sample space
+#                 sample_space = list(range(len(self.locations)))
+#                 for i in sample_space:
+#                     if self.locations[i] in view_to_loc[view]:
+#                         sample_space.remove(i)
+                
+#                 # sample without replacement
+#                 new_objects = random.sample(sample_space, free_space_in_view)
+#                 new_objects = {self.locations[i] for i in new_objects}
+                
+#                 # merge new objects into view
+#                 view_to_loc[view] = view_to_loc[view].union(new_objects)
+
+#         return view_to_loc
+
+#     def _construct_views(self, observation:np.ndarray, force_no_drop: Optional[bool] = False) -> Dict:
+        
+#         views = dict(full=observation)
+#         dropped = np.zeros((self.num_views))
+        
+#         for view, obj_idcs in self.view_to_loc.items():
+#             view_image = observation.copy()
+            
+#             for i, location in enumerate(self.locations):
+#                 if location not in obj_idcs:
+#                     view_image[..., location[0], location[1]] = self.null_value
+            
+            
+#             for t in range(len(observation)):
+#                 if force_no_drop:
+#                     dropped[t, view] = 0
+#                 elif self.dropout > 0 and random.random() < self.dropout:
+#                     dropped[t, view] = 1
+#                     view_image[t] = self.null_value
+            
+#             views[f'view_{view}'] = view_image
+#         output = dict(
+#             views=views,
+#             dropped=dropped,
+#         )
+        
+#         return output
+
+
+
+
+
+
 class FunctionalMVW: # used to map recorded obs to multiple views, without needing an env object
     def __init__(
         self,
