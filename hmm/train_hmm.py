@@ -130,6 +130,7 @@ def main(
     percentages,
     dropout,
     kl_balancing_coeff,
+    kl_scaling,
     l_unroll,
     discount_factor,
     num_variables,
@@ -233,6 +234,7 @@ def main(
         sparsemax_k=sparsemax_k,
         disable_vp=disable_vp,
         action_layer_dims=action_layer_dims,
+        kl_scaling=kl_scaling,
     )
     # print(model.summarize())
     # raise ValueError
@@ -264,6 +266,7 @@ def main(
         disable_vp=disable_vp,
         action_layer_dims=action_layer_dims,
         max_len=max_len,
+        kl_scaling=kl_scaling,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
@@ -305,6 +308,7 @@ if __name__ == '__main__':
     
     ## model args
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)
+    parser.add_argument('--kl_scaling', type=float, default=0.1)
     parser.add_argument('--l_unroll', type=int, default=1)
     parser.add_argument('--discount_factor', type=float, default=0.99)
     parser.add_argument('--num_variables', type=int, default=10)

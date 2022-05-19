@@ -281,6 +281,7 @@ class DiscreteNet(nn.Module):
         disable_recon_loss: bool = True,
         sparsemax: bool = False,
         sparsemax_k: int = 30,
+        kl_scaling: float = 1.0,
     ):
         if l_unroll < 1:
             raise ValueError('l_unroll must be at least 1')
@@ -298,6 +299,7 @@ class DiscreteNet(nn.Module):
         self.disable_recon_loss = disable_recon_loss
         self.sparsemax = sparsemax
         self.sparsemax_k = sparsemax_k
+        self.kl_scaling = kl_scaling
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
         
@@ -310,16 +312,29 @@ class DiscreteNet(nn.Module):
     def compute_posterior(self, prior, state_idcs, obs_frame, dropped):
         obs_logits = self.emission(obs_frame, state_idcs)
         
+        # posterior = prior.clone()
+        # posterior[prior > 0] = posterior[prior > 0].log() + (obs_logits[None][prior > 0,:] * (1-dropped)).sum(dim=-1)
+        # posterior[prior > 0] = F.softmax(posterior[prior > 0], dim=-1)
+        # print(f"F.log_softmax(obs_logits[None], dim=-1): {F.log_softmax(obs_logits[None], dim=-1)}")
         posterior = prior.clone()
-        posterior[prior > 0] = posterior[prior > 0].log() + (obs_logits[None][prior > 0,:] * (1-dropped)).sum(dim=-1)
-        posterior[prior > 0] = F.softmax(posterior[prior > 0], dim=-1)
+        posterior = posterior * torch.exp((obs_logits[None] * (1-dropped)).sum(dim=-1))
+        posterior = posterior / posterior.sum(dim=-1, keepdim=True)
+
+        # print(posterior)
+        # print(obs_logits)
+        # print(dropped)
+        # print((F.log_softmax(obs_logits[None], dim=-1)[prior > 0, :] * (1-dropped)).sum(dim=-1).exp())
+        # print(posterior2)
+        # print(torch.isclose(posterior, posterior2))
+        # print(all(torch.isclose(posterior, posterior2)))
+        
         return posterior, obs_logits
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, terms, dropped, player_pos):
         outputs = dict()
         
         batch_size, seq_len, channels, h, w = obs_sequence.shape
-        img_size = h * w
+        dimension = h * w * channels
         
         if not self.disable_vp:
             # # compute target value prefixes
@@ -356,12 +371,7 @@ class DiscreteNet(nn.Module):
         # unnormalized p(z_t|x_t)
         # print(state_belief)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_idcs, obs_sequence[:,0], dropped[:,0])
-        
         posterior_entropy = discrete_entropy(posterior_0)        
-
-        # p = posterior_0
-        # entropy = -(p[p!=0] * p[p!=0].log()).sum(dim=-1)
-        # print(f't = {0}, posterior, entropy = {entropy}')
 
         # pull posterior and prior closer together
         prior_loss = self.kl_balancing_loss(state_belief, posterior_0)
@@ -387,12 +397,11 @@ class DiscreteNet(nn.Module):
             value_prefix_loss = self.compute_vp_loss(value_prefix_pred, target_value_prefixes) # TODO if we use longer rollout need to adapt this
         else:
             value_prefix_loss = 0
-        
         # log the losses
         outputs['prior_loss'] = prior_loss
         outputs['value_prefix_loss'] = value_prefix_loss
-        outputs['recon_loss'] = recon_loss
-        outputs["dyn_loss"] = dyn_loss / self.l_unroll
+        outputs['recon_loss'] = recon_loss / dimension
+        outputs["dyn_loss"] = self.kl_scaling * dyn_loss / self.l_unroll
         outputs['prior_entropy'] = (prior_entropy + sum(prior_entropies))/(len(prior_entropies) + 1)
         outputs['posterior_entropy'] = (posterior_entropy + sum(posterior_entropies))/(len(posterior_entropies) + 1)
         
@@ -544,6 +553,7 @@ class LightningNet(pl.LightningModule):
         attention_batch_size = -1,
         disable_vp = False,
         action_layer_dims = None,
+        kl_scaling=1.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -575,6 +585,7 @@ class LightningNet(pl.LightningModule):
             disable_recon_loss,
             sparsemax,
             sparsemax_k,
+            kl_scaling,
         )
     
     def forward(self, obs, actions, value_prefixes, terms, dropped, player_pos):
