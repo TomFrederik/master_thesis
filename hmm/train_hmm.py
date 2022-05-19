@@ -327,6 +327,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--detect_anomaly', action='store_true')
     parser.add_argument('--track_grad_norm', type=int, default=-1)
+    parser.add_argument('--max_len', type=int, default=20, help='Max length of an episode. Longer episodes will be discarded')
     
     args = parser.parse_args()
     

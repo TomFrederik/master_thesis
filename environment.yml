@@ -62,8 +62,6 @@ dependencies:
   - libunistring=0.9.10=h27cfd23_0
   - libuv=1.40.0=h7b6447c_0
   - libvpx=1.7.0=h439df22_0
-  - libwebp=1.2.0=h89dd481_0
-  - libwebp-base=1.2.0=h27cfd23_0
   - lz4-c=1.9.3=h295c915_1
   - markdown=3.3.4=py39h06a4308_0
   - markupsafe=2.0.1=py39h27cfd23_0
@@ -174,7 +172,6 @@ dependencies:
     - ipython-genutils==0.2.0
     - ipywidgets==7.6.5
     - jax==0.3.10
-    - jaxlib==0.3.10+cuda11.cudnn82
     - jedi==0.18.1
     - jeepney==0.7.1
     - jinja2==3.0.3
@@ -296,3 +293,4 @@ dependencies:
     - xxhash==2.0.2
     - yacs==0.1.8
     - yaspin==2.1.0
+    - jaxlib

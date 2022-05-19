@@ -6,17 +6,26 @@ sys.path.insert(0, '../')
 from crossing.wrappers import FunctionalMVW
 
 
-def _split_trajs(dones, actions, obs):
-    stop_idcs = np.where(dones == 1)[0] + 1
-    start_idcs = np.concatenate(([0], stop_idcs[:-1]))
+def _split_trajs(dones, actions, obs, max_len=20):
+    stop_idcs = (np.where(dones == 1)[0] + 1).tolist()
+    start_idcs = np.concatenate(([0], stop_idcs[:-1])).tolist()
     action = []
+    
+    # remove trajectories that are too long
+    skip_idcs = set({})
+    for i in range(len(stop_idcs)):
+        if stop_idcs[i]-start_idcs[i] > max_len:
+            skip_idcs.add(i)
+    
     for i, (start, stop) in enumerate(zip(start_idcs, stop_idcs)):
+        if i in skip_idcs:
+            continue
         action.append(actions[start-i:stop-i-1])
     actions = np.array(action, dtype=object)
-    obs = np.array([obs[start:stop] for start, stop in zip(start_idcs, stop_idcs)], dtype=object)
+    obs = np.array([obs[start:stop] for i, (start, stop) in enumerate(zip(start_idcs, stop_idcs)) if i not in skip_idcs], dtype=object)
     return obs, actions
 
-def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, **kwargs):
+def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, max_len=20, **kwargs):
     data = np.load(data_path)
     dones = data['done']
     obs = data['obs']
@@ -24,7 +33,7 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
         
     sigma = np.std(obs)
     mu = np.mean(obs)
-    obs, actions = _split_trajs(dones, action, obs)
+    obs, actions = _split_trajs(dones, action, obs, max_len)
     if max_datapoints is not None:
         obs = obs[:max_datapoints]
         actions = actions[:max_datapoints]
@@ -39,8 +48,8 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
     
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
-def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, **kwargs):
-    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, **kwargs)
+def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, max_len=20, **kwargs):
+    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, max_len, **kwargs)
     train_data = SingleTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout)
     val_data = SingleTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True)
     return train_data, val_data
