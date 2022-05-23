@@ -15,7 +15,7 @@ def discrete_kl(p, q):
     out = out[p != 0].sum() / p.shape[0]
     return out
 
-
+@torch.no_grad()
 def discrete_entropy(p):
     out = torch.zeros_like(p)
     out[p == 0] = 0

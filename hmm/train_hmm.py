@@ -73,19 +73,21 @@ class ExtrapolateCallback(pl.Callback):
             # print(f"{state_belief.shape = }")
             # print(f"{state_idcs.shape = }")
         else:
-            self.prior = F.softmax(self.prior, dim=-1)
+            state_logits = F.log_softmax(self.prior, dim=-1)
+            temp = state_logits[:,0]
+            for i in range(1, state_logits.shape[1]):
+                temp = temp[...,None] + state_logits[:,i,None,:]
+                temp = torch.flatten(temp, start_dim=1)
+            self.prior = F.softmax(temp, dim=-1)
             self.state_idcs = None
         
         # extrapolations
-        self.obs_logits = pl_module.emission(self.obs, self.state_idcs)
-        
         ent = -(self.prior * self.prior.log())
         ent[self.prior == 0] = 0
         ent = ent.sum()
         print(f"0: prior entropy: {ent:.4f}")
         
-        self.posterior_0, _ = pl_module.network.compute_posterior(self.prior, self.state_idcs, self.obs[:,0], self.dropped[:,0])
-        print(f"{self.posterior_0 = }")
+        self.posterior_0, _ = pl_module.network.compute_posterior(self.prior, self.state_idcs, self.obs[0,None], self.dropped[:,0])
         ent = -(self.posterior_0 * self.posterior_0.log())
         ent[self.posterior_0 == 0] = 0
         ent = ent.sum()
@@ -93,7 +95,9 @@ class ExtrapolateCallback(pl.Callback):
         
         state_belief_prior_sequence, state_idcs_prior_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
-        state_idcs_prior_sequence = torch.cat([torch.tensor(self.state_idcs, device=state_belief_prior_sequence.device)[None], torch.tensor(state_idcs_prior_sequence, device=state_belief_prior_sequence.device)], dim=0)
+        if state_idcs_prior_sequence is not None:
+            state_idcs_prior_sequence = torch.cat([torch.tensor(self.state_idcs, device=state_belief_prior_sequence.device)[:,None], state_idcs_prior_sequence], dim=1)
+            state_idcs_prior_sequence = einops.rearrange(state_idcs_prior_sequence, 'dim time -> time dim')
         
         for i in range(1,state_belief_prior_sequence.shape[1]):
             ent = -(state_belief_prior_sequence[:,i] * state_belief_prior_sequence[:,i].log())
@@ -269,7 +273,7 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=100))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=10))
     
     # set up lightning trainer
     trainer = pl.Trainer(
