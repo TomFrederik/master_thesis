@@ -12,7 +12,7 @@ import torch.nn as nn
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, DeterministicEnvWrappper, StepWrapper
+from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, NumSeedsEnvWrappper, StepWrapper
 
 class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
     def __init__(
@@ -40,9 +40,8 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         b, h, w = observations.shape
-
         # one-hot
-        obs = nn.functional.one_hot(observations.long()).float()
+        obs = nn.functional.one_hot(observations.long(), num_classes=4).float()
         obs = einops.rearrange(obs, 'b h w c -> b c h w')
         # obs = self.embedding(einops.rearrange(observations.int(), 'b h w -> b (h w)'))
         # obs = einops.rearrange(obs, 'b (h w) c -> b c h w', h=h, w=w)
@@ -84,7 +83,7 @@ env = StepWrapper(env)
 env = FullyObsWrapper(env)
 env = MyFullWrapper(env)
 if config['constant_env']:
-    env = DeterministicEnvWrappper(env)
+    env = NumSeedsEnvWrappper(env, 1)
 
 run = wandb.init(
     project="MiniGrid-Crossing",
@@ -114,6 +113,6 @@ model.learn(
     ),
 )
 
-model_name = "PPO" if config['constant_env'] else "PPO_changing"
+model_name = "PPO" if config['constant_env'] else "PPO_all"
 model.save(model_name)
 run.finish()

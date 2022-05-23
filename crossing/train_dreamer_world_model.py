@@ -27,7 +27,7 @@ class ExtrapolateCallback(pl.Callback):
         self.every_n_batches = every_n_batches
         self.save_to_disk = save_to_disk
         self.initial_loading = False
-        obs, actions, vp, terms, dropped, player_pos = dataset.get_no_drop(0)
+        obs, actions, vp, terms, dropped = dataset.get_no_drop(0)
         self.obs = torch.from_numpy(obs)
         self.actions = torch.from_numpy(actions[None])
         self.mu = dataset.mu
@@ -73,8 +73,7 @@ class ExtrapolateCallback(pl.Callback):
         pl_module.logger.experiment.log({'Extrapolation': wandb.Image(make_grid(images, nrow=2*num_views))})
 
 def main(
-    constant_env,
-    normalized_float,
+    num_seeds,
     multiview,
     null_value,
     percentages,
@@ -107,9 +106,8 @@ def main(
     pl.seed_everything(seed)
     
     # get data path
-    const = "const" if constant_env else "changing"
-    normalized = "_normalized_float" if normalized_float else ""
-    file_name = f"ppo_{const}_env_experience{normalized}.npz"
+    suffix = 'all' if num_seeds is None else str(num_seeds)
+    file_name = f"ppo_{suffix}_env_experience.npz"
     data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(data_path, file_name)
     
@@ -160,7 +158,7 @@ def main(
     # set up wandb
     wandb_config = dict(
         seed=seed,
-        constant_env=constant_env,
+        num_seeds=num_seeds,
         kl_balancing_coeff=kl_balancing_coeff,
         l_unroll=l_unroll,
         learning_rate=learning_rate,
@@ -195,8 +193,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     
     # env settings
-    parser.add_argument('--constant_env', action='store_true')
-    parser.add_argument('--normalized_float', action='store_true')
+    parser.add_argument('--num_seeds', type=int, default=None)
     parser.add_argument('--multiview', action='store_true')
     parser.add_argument('--null_value', type=int, default=1)
     parser.add_argument('--percentages', type=float, nargs='*', default=[1])

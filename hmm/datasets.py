@@ -214,7 +214,7 @@ class SingleTrajToyData(Dataset):
             obs.astype(np.float32),
             action.astype(np.int64),
             value_prefixes.astype(np.float32),
-            # terms.astype(np.int64), #terms
+            terms.astype(np.int64), #terms
             dropped.astype(np.float32),
             # player_pos.astype(np.float32),
         )

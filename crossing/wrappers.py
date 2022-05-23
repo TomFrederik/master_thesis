@@ -442,15 +442,19 @@ class FlatWrapper(gym.ObservationWrapper):
             observation[key] = einops.rearrange(observation[key], 'H W -> (H W)')
         return observation
 
-class DeterministicEnvWrappper(gym.Wrapper):
-    def __init__(self, env, seed=1337):
+class NumSeedsEnvWrappper(gym.Wrapper):
+    def __init__(self, env, num_seeds=None):
         super().__init__(env)
+        
         self.env = env
-        self.seed = seed
-        self.env.seed(seed)
-
+        self.num_seeds = num_seeds
+        
+        if self.num_seeds is not None:
+            self.env.seed(np.random.choice(self.num_seeds))
+        
     def reset(self):
-        self.env.seed(self.seed)
+        if self.num_seeds is not None:
+            self.env.seed(np.random.choice(self.num_seeds))
         return self.env.reset()
 
 class StepWrapper(gym.Wrapper):

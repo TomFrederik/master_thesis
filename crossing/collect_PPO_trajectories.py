@@ -6,19 +6,20 @@ import numpy as np
 import stable_baselines3 as sb3
 from tqdm import tqdm
 
-from wrappers import MyFullWrapper, DeterministicEnvWrappper, StepWrapper
+from wrappers import MyFullWrapper, NumSeedsEnvWrappper, StepWrapper
 
 def main(
-    constant_env,
-    normalized_float
+    num_seeds,
 ):
-    
-    num_trajectories = 1000 if constant_env else 10000
-
-    model_name = "PPO" if constant_env else "PPO_changing"
-    data_file = "ppo_const_env_experience" if constant_env else "ppo_changing_env_experience"
-    if normalized_float:
-        data_file = data_file + "_normalized_float"
+    if num_seeds is None:
+        num_trajectories = 10000
+        suffix = 'all'
+    else:
+        num_trajectories = 1000 * num_seeds
+        suffix = '{}'.format(num_seeds)
+        
+    model_name = "PPO_all"
+    data_file = f"ppo_{suffix}_env_experience"
     model = sb3.PPO.load(model_name)
 
     # set up environment
@@ -26,8 +27,7 @@ def main(
     env = StepWrapper(env)
     env = FullyObsWrapper(env)
     env = MyFullWrapper(env)
-    if constant_env:
-        env = DeterministicEnvWrappper(env)
+    env = NumSeedsEnvWrappper(env, num_seeds)
 
     # Collect trajectories
     obs_list = []
@@ -39,18 +39,14 @@ def main(
         done_list.append(int(done))
         while not done:
             action, _states = model.predict(obs)
-            if normalized_float:
-                obs = (obs - 1.5) / 3
             obs_list.append(obs)
             obs, rewards, done, info = env.step(action)
             action_list.append(action)
             done_list.append(int(done))
-        if normalized_float:
-            obs = (obs - 1.5) / 3
+
         action, _states = model.predict(obs)
         obs_list.append(obs)
         action_list.append(action)    
-
     np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), done=np.array(done_list))
 
 
@@ -60,7 +56,6 @@ def main(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--constant_env', action='store_true')
-    parser.add_argument('--normalized_float', action='store_true')
+    parser.add_argument('--num_seeds', type=int, default=None)
     args = parser.parse_args()
     main(**vars(args))

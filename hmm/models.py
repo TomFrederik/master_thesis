@@ -319,7 +319,7 @@ class DiscreteNet(nn.Module):
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, dropped):
         outputs = dict()
-        
+
         batch_size, seq_len, channels, h, w = obs_sequence.shape
         dimension = h * w * channels
         if not self.disable_vp:
@@ -355,7 +355,6 @@ class DiscreteNet(nn.Module):
                 temp = temp[...,None] + state_logits[:,i,None,:]
                 temp = torch.flatten(temp, start_dim=1)
             state_belief = F.softmax(temp, dim=-1)
-            # perform outer sum
             
             state_idcs = None
 
@@ -571,7 +570,7 @@ class LightningNet(pl.LightningModule):
             kl_scaling,
         )
     
-    def forward(self, obs, actions, value_prefixes, dropped):
+    def forward(self, obs, actions, value_prefixes, terms, dropped):
         return self.network(obs, actions, value_prefixes, dropped)
     
     def training_step(self, batch, batch_idx):
@@ -627,6 +626,35 @@ class MLPDecoder(nn.Module):
     def set_bn_train(self, m):
         if isinstance(m, nn.modules.batchnorm._BatchNorm):
             m.train()
+            
+            
+class ResNetBlock(nn.Module):
+
+    def __init__(self, num_in_channels, num_hidden_channels, shape, stride=1):
+        super().__init__()
+        self.ln1 = nn.LayerNorm([num_in_channels, *shape])
+        self.relu = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(num_in_channels, num_hidden_channels, 3, stride, padding=1)
+        
+        self.ln2 = nn.LayerNorm([num_hidden_channels, *shape])
+        self.conv2 = nn.Conv2d(num_hidden_channels, num_in_channels, 3, stride, padding=1)
+        
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        out = self.ln1(x)
+        out = self.relu(out)
+        out = self.conv1(out)
+
+        out = self.ln2(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        out += residual
+
+        return out
 
 
 class Decoder(nn.Module):
@@ -642,12 +670,30 @@ class Decoder(nn.Module):
             nn.ELU(alpha=1.0),
             nn.ConvTranspose2d(32, 16, (2,2), (1,1)),
             nn.ELU(alpha=1.0),
-            # nn.ConvTranspose2d(16, output_channels, (2,2), (1,1)),
             nn.ConvTranspose2d(16, 16, (2,2), (1,1)),
             layers.Rearrange('b d h w -> b (d h w)'),
             nn.Linear(16*49, output_channels*49),
             layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
         )
+        
+        # ResNet
+        # self.net = nn.Sequential(
+        #     layers.Rearrange('b n d -> b (n d)'),
+        #     nn.Linear(latent_dim*num_vars, 4*4*16),
+        #     layers.Rearrange('b (c h w) -> b c h w', c=16, h=4, w=4),
+        #     ResNetBlock(16, 64, shape=(4,4)),
+        #     nn.ConvTranspose2d(16, 64, (2,2), (1,1)),
+        #     nn.ReLU(),
+        #     ResNetBlock(64, 64, shape=(5,5)),
+        #     nn.ConvTranspose2d(64, 16, (2,2), (1,1)),
+        #     nn.ReLU(),
+        #     ResNetBlock(16, 16, shape=(6,6)),
+        #     nn.ConvTranspose2d(16, 16, (2,2), (1,1)),
+        #     nn.ReLU(),
+        #     layers.Rearrange('b d h w -> b (d h w)'),
+        #     nn.Linear(16*49, output_channels*49),
+        #     layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
+        # )
 
         # ours
         # self.net = nn.Sequential(
