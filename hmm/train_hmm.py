@@ -95,7 +95,8 @@ class ExtrapolateCallback(pl.Callback):
         
         state_belief_prior_sequence, state_bit_vec_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
-        state_bit_vec_sequence = torch.cat([self.state_idcs[None], state_bit_vec_sequence], dim=0)
+        if state_bit_vec_sequence is not None:
+            state_bit_vec_sequence = torch.cat([self.state_idcs[None], state_bit_vec_sequence], dim=0)
         
         for i in range(1,state_belief_prior_sequence.shape[1]):
             ent = -(state_belief_prior_sequence[:,i] * state_belief_prior_sequence[:,i].log())
