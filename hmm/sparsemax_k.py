@@ -3,6 +3,7 @@ from queue import PriorityQueue
 from typing import Any, TypeVar
 
 from entmax import sparsemax
+import einops
 import pytest
 import torch
 import torch.nn.functional as F
@@ -31,7 +32,7 @@ def binary_topk(logits, k):
     
     
     topk_bit_vecs = []
-    topk_state_idcs = []
+    # topk_state_idcs = []
     
     top_bit_vec = torch.argmax(logits, dim=-1)
     top_idx = compute_state_idx_from_bit_vector(top_bit_vec)
@@ -42,14 +43,14 @@ def binary_topk(logits, k):
     while len(topk_bit_vecs) < k:
         prio_item = next_bit_vecs.get()
         topk_bit_vecs.append(prio_item.item)
-        topk_state_idcs.append(prio_item.state_idx)
+        # topk_state_idcs.append(prio_item.state_idx)
         
         for item in get_possible_next_bit_vecs(logits, prio_item, visited, next_bit_vecs, max_elems=k-len(topk_bit_vecs)):
             idx = item.state_idx
             if idx not in visited:
                 visited.add(idx)
                 next_bit_vecs.put(item)
-    return torch.stack(topk_bit_vecs, dim=0), topk_state_idcs
+    return torch.stack(topk_bit_vecs, dim=0)#, topk_state_idcs
 
 def flip_bit(bit_vec: Tensor, flip_idx: int) -> Tensor:
     """Flips the flip_idx-th bit of the given bit vector.
@@ -122,13 +123,13 @@ def sparsemax_k(logits, k, dim=-1):
     :rtype: Tuple[Tensor, List[int]]
     """
     #TODO add batch support
-    topk_bit_vecs, topk_state_idcs = binary_topk(logits, k)
+    topk_bit_vecs = binary_topk(logits, k)
     # print(f"{logits = }")
     topk_logits = logits[torch.arange(len(logits)), topk_bit_vecs].sum(dim=-1)
     # print(f"{topk_logits = }")
     out = sparsemax(topk_logits, dim=dim)
     
-    return out, topk_state_idcs
+    return out, topk_bit_vecs
 
 ###
 # Tests
@@ -173,7 +174,19 @@ def test_get_logit_changes():
 # how would I write a transition when
 # I am given a belief over states with their respective idcs and all other states are implicitly zero
 # Now, let's assume that I have to pass the features into some module
-def sparse_transition(in_features, out_features, in_module, out_module, state_beliefs, state_idcs, dim=-1):
+class BitConverter:
+    def __init__(self, bits, device=None):
+        self.bits = bits
+        self.mask = 2**torch.arange(self.bits).long().to(device)
+
+    def bitvec_to_idx(self, bit_vec: Tensor) -> Tensor:
+        return (bit_vec.float() @ self.mask.float()).long()   
+
+    def idx_to_bitvec(self, x):
+        # from https://stackoverflow.com/questions/55918468/convert-integer-to-pytorch-tensor-of-binary-bits
+        return x.unsqueeze(-1).bitwise_and(self.mask).ne(0).long()
+
+def sparse_transition(in_features, out_features, in_module, out_module, state_beliefs, state_bit_vecs, bitconverter, dim=-1):
     # X_features have shape (num_states, hidden_dim)
     # state_beliefs have shape (k, )
     # state_idcs is a list of length k
@@ -182,23 +195,24 @@ def sparse_transition(in_features, out_features, in_module, out_module, state_be
     # print(f'{in_module = }')
     # print('hi')
     # print(state_idcs)
-    
-    selected_out_features = out_module(out_features[state_idcs])
-    # print(f"{selected_out_features.shape = }")
+    idcs = bitconverter.bitvec_to_idx(state_bit_vecs)
+    # print(f"{state_bit_vecs = }")
+    # print(f"{idcs = }")
+    # selected_out_features = einops.rearrange(out_module(torch.einsum('ijk,jkl->ijl', one_hots, out_features)), 'k num_vars dim -> k (num_vars dim)')
+    selected_out_features = out_module(out_features[idcs])
     # NOTE:
     # it seems pretty likely that this is going to blow up
     in_features = in_module(in_features) 
-    # print(f"{in_features.shape = }")
     # in_features has shape (num_states, hidden_dim)
     # solutions:
         # batch it
         
-    # print(f'{(state_beliefs @ selected_out_features).shape = }')
-    # print(f'{state_beliefs = }')
     prior_beliefs = state_beliefs @ F.softmax((selected_out_features @ in_features.T), dim=-1)
     # print(f'{prior_beliefs = }')
-    
-    # Hm I think this^ is very wrong. I'm just multiplying probabilities with logits here.
+    # print(f'{state_beliefs = }')
+    # print(f'{state_beliefs.shape = }')
+    # print(f'{in_features.shape = }')
+    # print(f'{selected_out_features.shape = }')
     
     # print(f'{prior_beliefs.shape = }')
     # TODO support chunking this or something
@@ -208,12 +222,10 @@ def sparse_transition(in_features, out_features, in_module, out_module, state_be
     
     # The solution: just apply topk to the joint
     # TODO am I sure that the indices are the same as the indices I compute by hand?
-    values, indices = torch.topk(prior_beliefs, k=len(state_idcs), dim=dim)
-    # print(f'{values = }')
+    values, indices = torch.topk(prior_beliefs, k=len(state_bit_vecs), dim=dim)
     out = sparsemax(values, dim=dim)
     indices = indices.squeeze()
-    # print(out)
-    # print(indices)
-    return out, indices
+    state_bit_vecs = bitconverter.idx_to_bitvec(indices)
+    return out, state_bit_vecs
     
 

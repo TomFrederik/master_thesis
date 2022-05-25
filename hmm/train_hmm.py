@@ -93,11 +93,9 @@ class ExtrapolateCallback(pl.Callback):
         ent = ent.sum()
         print(f"0: post  entropy: {ent:.4f}")
         
-        state_belief_prior_sequence, state_idcs_prior_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
+        state_belief_prior_sequence, state_bit_vec_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
-        if state_idcs_prior_sequence is not None:
-            state_idcs_prior_sequence = torch.cat([torch.tensor(self.state_idcs, device=state_belief_prior_sequence.device)[:,None], state_idcs_prior_sequence], dim=1)
-            state_idcs_prior_sequence = einops.rearrange(state_idcs_prior_sequence, 'dim time -> time dim')
+        state_bit_vec_sequence = torch.cat([self.state_idcs[None], state_bit_vec_sequence], dim=0)
         
         for i in range(1,state_belief_prior_sequence.shape[1]):
             ent = -(state_belief_prior_sequence[:,i] * state_belief_prior_sequence[:,i].log())
@@ -115,7 +113,7 @@ class ExtrapolateCallback(pl.Callback):
         
         emission_input = einops.rearrange(state_belief_prior_sequence, 'b t ... -> (b t) ...')
         
-        obs_hat = pl_module.emission.decode_only(emission_input, state_idcs_prior_sequence).to('cpu').float()
+        obs_hat = pl_module.emission.decode_only(emission_input, state_bit_vec_sequence).to('cpu').float()
         num_views = self.obs.shape[1]
         images = torch.stack(
             [(self.obs[:,i].to('cpu')*self.sigma)+self.mu for i in range(num_views)]\
@@ -271,7 +269,7 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=10))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=50))
     
     # set up lightning trainer
     trainer = pl.Trainer(
