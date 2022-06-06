@@ -19,7 +19,6 @@ class DreamerWorldModel(pl.LightningModule):
         self.config = config
         self.action_size = config.action_size
         self.kl_info = config.kl_info
-        self.seq_len = config.seq_len
         self.batch_size = config.batch_size
         self.loss_scale = config.loss_scale
 

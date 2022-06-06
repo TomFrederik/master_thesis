@@ -355,10 +355,6 @@ class LightningNet(pl.LightningModule):
         optimizer = torch.optim.AdamW(self.network.parameters(), lr=self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)
         return optimizer
     
-    # NOTE: Why did I use this one again?
-    # def backward(self, loss, optimizer, *arg):
-    #     loss.backward(retain_graph=True)
-
 
 class MLPDecoder(nn.Module):
     def __init__(self, latent_dim, num_vars, output_channels, width=7) -> None:

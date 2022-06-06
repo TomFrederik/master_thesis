@@ -74,12 +74,12 @@ class ExtrapolateCallback(pl.Callback):
 
 def main(
     num_seeds,
-    multiview,
+    num_views,
     null_value,
-    percentages,
+    percentage,
     dropout,
     kl_balancing_coeff,
-    l_unroll,
+    kl_scaling,
     discount_factor,
     learning_rate,
     batch_size,
@@ -90,14 +90,16 @@ def main(
     max_datapoints,
 ):
     
+    
+    
     if batch_size > 1:
         raise NotImplementedError
     else:
         data_cls = construct_train_val_data
         data_kwargs = dict(
-            multiview=multiview,
+            multiview=num_views > 1,
             null_value=null_value,
-            percentages=percentages,
+            percentages=[percentage]*num_views,
             dropout=dropout,
             test_only_dropout=test_only_dropout,
             max_datapoints=max_datapoints,
@@ -130,15 +132,14 @@ def main(
     worldmodel_config = dict(
         action_size = num_actions,
         kl_info = {'use_kl_balance':True, 'kl_balance_scale':kl_balancing_coeff, 'use_free_nats':False},
-        seq_len = l_unroll,
         lr = learning_rate,
         batch_size = batch_size,
-        loss_scale = {'kl':0.1},
+        loss_scale = {'kl':kl_scaling},
         rssm_node_size = rssm_node_size,
         rssm_type = rssm_type,
         rssm_info = rssm_info,
         embedding_size = embedding_size,
-        obs_shape = (len(percentages),7,7),
+        obs_shape = (num_views,7,7),
         obs_encoder = obs_encoder,
         obs_decoder = obs_decoder,
         reward_config = dict(
@@ -162,9 +163,8 @@ def main(
         seed=seed,
         num_seeds=num_seeds,
         kl_balancing_coeff=kl_balancing_coeff,
-        l_unroll=l_unroll,
+        kl_scaling=kl_scaling,
         learning_rate=learning_rate,
-        loss_scale=0.1,
         num_views=len(percentages),
         percentages=percentages,
         dropout=dropout,
@@ -196,16 +196,16 @@ if __name__ == '__main__':
     
     # env settings
     parser.add_argument('--num_seeds', type=int, default=None)
-    parser.add_argument('--multiview', action='store_true')
+    parser.add_argument('--num_views', type=int, default=1)
     parser.add_argument('--null_value', type=int, default=1)
-    parser.add_argument('--percentages', type=float, nargs='*', default=[1])
+    parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--test_only_dropout', action='store_true')
+    parser.add_argument('--test_only_dropout', type=bool, default=False)
     parser.add_argument('--max_datapoints', type=int, default=None)
     
     ## model args
+    parser.add_argument('--kl_scaling', type=float, default=0.1)
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)
-    parser.add_argument('--l_unroll', type=int, default=5)
     parser.add_argument('--discount_factor', type=float, default=0.99)
     
     # training args
