@@ -334,7 +334,7 @@ class LightningNet(pl.LightningModule):
         total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Training/{key}", value)
-        self.log(f'Training/unscaled_dyn_loss', self.hparams.kl_scaling * outputs['dyn_loss'])
+        self.log(f'Training/unscaled_dyn_loss', outputs['dyn_loss'] / self.hparams.kl_scaling)
         self.log(f"Training/total_loss", total_loss)
         # for key, value in outputs.items():
         #     print(f"{key}: {value}")
@@ -346,7 +346,7 @@ class LightningNet(pl.LightningModule):
         total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Validation/{key}", value)
-        self.log(f'Validation/unscaled_dyn_loss', self.hparams.kl_scaling * outputs['dyn_loss'])
+        self.log(f'Validation/unscaled_dyn_loss', outputs['dyn_loss'] / self.hparams.kl_scaling)
         self.log(f"Validation/total_loss", total_loss)
         
         return total_loss
