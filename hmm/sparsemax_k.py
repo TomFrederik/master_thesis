@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-Tensor = TypeVar('Tensor', bound=torch.Tensor)
+from commons import Tensor
 
 @dataclass(order=True)
 class PrioritizedItem:
@@ -16,14 +16,20 @@ class PrioritizedItem:
     item: Any=field(compare=False)
     state_idx: int=field(compare=False)
 
-def convert_state_idx_to_bit_vector(state_idx, num_vars, device=None):
-    """Converts a state index to a bit vector."""
-    if device is None:
-        device = 'cpu'
-    #TODO make this more efficient
-    return torch.tensor([int(n) for n in bin(state_idx)[2:].zfill(num_vars)], device=device)
+class BitConverter:
+    def __init__(self, bits, device=None):
+        self.bits = bits
+        self.mask = 2**torch.arange(self.bits).long().to(device)
 
-def binary_topk(logits, k):
+    def bitvec_to_idx(self, bit_vec: Tensor) -> Tensor:
+        return (bit_vec.float() @ self.mask.float()).long()   
+
+    def idx_to_bitvec(self, x):
+        # from https://stackoverflow.com/questions/55918468/convert-integer-to-pytorch-tensor-of-binary-bits
+        return x.unsqueeze(-1).bitwise_and(self.mask).ne(0).long()
+
+
+def binary_topk(logits: Tensor, k: int, bitconverter: BitConverter):
     #TODO add batch dim support
     if len(logits.shape) < 2 or logits.shape[-1] != 2:
         raise ValueError(f"logits must have shape (..., num_vars, 2), but has shape {logits.shape}")
@@ -32,10 +38,9 @@ def binary_topk(logits, k):
     
     
     topk_bit_vecs = []
-    # topk_state_idcs = []
     
     top_bit_vec = torch.argmax(logits, dim=-1)
-    top_idx = compute_state_idx_from_bit_vector(top_bit_vec)
+    top_idx = bitconverter.bitvec_to_idx(top_bit_vec)
     visited = set([top_idx]) # This is where batch support fails.
     next_bit_vecs = PriorityQueue()
     next_bit_vecs.put(PrioritizedItem(0, top_bit_vec, top_idx))
@@ -45,7 +50,7 @@ def binary_topk(logits, k):
         topk_bit_vecs.append(prio_item.item)
         # topk_state_idcs.append(prio_item.state_idx)
         
-        for item in get_possible_next_bit_vecs(logits, prio_item, visited, next_bit_vecs, max_elems=k-len(topk_bit_vecs)):
+        for item in get_possible_next_bit_vecs(logits, prio_item, visited):
             idx = item.state_idx
             if idx not in visited:
                 visited.add(idx)
@@ -97,7 +102,7 @@ def get_flipped_bit_state_idx(old_bit_vec, old_state_idx, flip_idx):
         idx = old_state_idx - 2 ** flip_idx
     return idx
 
-def get_possible_next_bit_vecs(logits, prio_item, visited, prio_queue, max_elems):
+def get_possible_next_bit_vecs(logits, prio_item, visited):
     prio, bit_vec, state_idx = prio_item.priority, prio_item.item, prio_item.state_idx
     out = []
     for flip_idx in range(len(bit_vec)):
@@ -109,10 +114,7 @@ def get_possible_next_bit_vecs(logits, prio_item, visited, prio_queue, max_elems
             out.append(PrioritizedItem(prio + prio_delta, candidate, candidate_idx))
     return out
 
-def compute_state_idx_from_bit_vector(bit_vec):
-    return (bit_vec.float() @ 2**(torch.arange(bit_vec.shape[-1], device=bit_vec.device, dtype=torch.float))).int().item()
-
-def sparsemax_k(logits, k, dim=-1):
+def sparsemax_k(logits, k, bitconverter: BitConverter, dim=-1):
     """Computes sparsemax_k of the given logits.
 
     :param logits: Logit tensor of shape (num_vars, 2)
@@ -123,7 +125,7 @@ def sparsemax_k(logits, k, dim=-1):
     :rtype: Tuple[Tensor, List[int]]
     """
     #TODO add batch support
-    topk_bit_vecs = binary_topk(logits, k)
+    topk_bit_vecs = binary_topk(logits, k, bitconverter)
     # print(f"{logits = }")
     topk_logits = logits[torch.arange(len(logits)), topk_bit_vecs].sum(dim=-1)
     # print(f"{topk_logits = }")
@@ -165,67 +167,16 @@ def test_flip_bit():
         flip_bit(test_tensor, 10)
         flip_bit(torch.stack([test_tensor,test_tensor]), 0)
 
-def test_get_logit_changes():
-    pass
-    # logits = torch.nn.functional.log_softmax(torch.randn(5,2),dim=1)
+def test_binary_top_k():
+    bitconverter = BitConverter(bits=3)
     
-
-
-# how would I write a transition when
-# I am given a belief over states with their respective idcs and all other states are implicitly zero
-# Now, let's assume that I have to pass the features into some module
-class BitConverter:
-    def __init__(self, bits, device=None):
-        self.bits = bits
-        self.mask = 2**torch.arange(self.bits).long().to(device)
-
-    def bitvec_to_idx(self, bit_vec: Tensor) -> Tensor:
-        return (bit_vec.float() @ self.mask.float()).long()   
-
-    def idx_to_bitvec(self, x):
-        # from https://stackoverflow.com/questions/55918468/convert-integer-to-pytorch-tensor-of-binary-bits
-        return x.unsqueeze(-1).bitwise_and(self.mask).ne(0).long()
-
-def sparse_transition(in_features, out_features, in_module, out_module, state_beliefs, state_bit_vecs, bitconverter, dim=-1):
-    # X_features have shape (num_states, hidden_dim)
-    # state_beliefs have shape (k, )
-    # state_idcs is a list of length k
-    # output should be a tensor of shape (num_states, ) # or maybe (k, ) again after applying sparsemax_k??
-    # print(f'{out_module = }')
-    # print(f'{in_module = }')
-    # print('hi')
-    # print(state_idcs)
-    idcs = bitconverter.bitvec_to_idx(state_bit_vecs)
-    # print(f"{state_bit_vecs = }")
-    # print(f"{idcs = }")
-    # selected_out_features = einops.rearrange(out_module(torch.einsum('ijk,jkl->ijl', one_hots, out_features)), 'k num_vars dim -> k (num_vars dim)')
-    selected_out_features = out_module(out_features[idcs])
-    # NOTE:
-    # it seems pretty likely that this is going to blow up
-    in_features = in_module(in_features) 
-    # in_features has shape (num_states, hidden_dim)
-    # solutions:
-        # batch it
-        
-    prior_beliefs = state_beliefs @ F.softmax((selected_out_features @ in_features.T), dim=-1)
-    # print(f'{prior_beliefs = }')
-    # print(f'{state_beliefs = }')
-    # print(f'{state_beliefs.shape = }')
-    # print(f'{in_features.shape = }')
-    # print(f'{selected_out_features.shape = }')
+    logits = torch.tensor([[0.1, 0.9], [0.2, 0.8],[0.3,0.7]]).log()
+    topk_bit_vecs = binary_topk(logits, 1, bitconverter)
     
-    # print(f'{prior_beliefs.shape = }')
-    # TODO support chunking this or something
-    # Okay this is a big problem right now. Posterior beliefs is a dist over the joint
-    # i.e. it is NOT factorized into a distribution over variables
-    # return sparsemax_k(prior_beliefs, k=len(state_idcs), dim=dim)
+    topk_bit_vecs = binary_topk(logits, 2, bitconverter)
+    sols = torch.stack([torch.tensor([1,1,1]),torch.tensor([1,1,0])], dim=0)
+    assert torch.isclose(topk_bit_vecs, sols).all()
+
     
-    # The solution: just apply topk to the joint
-    # TODO am I sure that the indices are the same as the indices I compute by hand?
-    values, indices = torch.topk(prior_beliefs, k=len(state_bit_vecs), dim=dim)
-    out = sparsemax(values, dim=dim)
-    indices = indices.squeeze()
-    state_bit_vecs = bitconverter.idx_to_bitvec(indices)
-    return out, state_bit_vecs
-    
+test_binary_top_k()
 

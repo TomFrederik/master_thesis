@@ -154,6 +154,8 @@ def main(
         argparse.Namespace(**worldmodel_config),
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )
+    print(model)
+    raise ValueError
     
     # set up wandb
     wandb_config = dict(

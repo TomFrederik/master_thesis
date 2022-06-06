@@ -1,3 +1,4 @@
+import itertools
 import math
 
 from memory_efficient_attention import efficient_dot_product_attention_pt
@@ -80,3 +81,22 @@ def attention(keys, queries):
 
 def mem_efficient_attention(keys, queries, query_chunk_size=1024, key_chunk_size=4096):
     return efficient_dot_product_attention_pt(queries, keys, query_chunk_size=query_chunk_size, key_chunk_size=key_chunk_size)
+
+
+def generate_all_combinations(codebook_size, num_variables):
+        all_idcs = []
+        for i, idcs in enumerate(itertools.product(range(codebook_size), repeat=num_variables)):
+            all_idcs.append(list(idcs))
+        return torch.tensor(all_idcs, dtype=torch.long)
+ 
+    
+def test_generate_all_combinations():
+    codebook_size = 3
+    num_variables = 2
+    
+    all_combos = generate_all_combinations(codebook_size, num_variables)
+    target = torch.tensor([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]], dtype=torch.long)
+    assert torch.equal(all_combos, target)
+
+
+test_generate_all_combinations()

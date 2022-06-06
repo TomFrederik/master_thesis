@@ -1,5 +1,6 @@
 import itertools
-from typing import Optional, Tuple, List, Union
+from time import time
+from typing import List, Optional, Tuple, Union
 
 import einops
 import einops.layers.torch as layers
@@ -7,13 +8,14 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from time import time
 
-from utils import discrete_kl, discrete_entropy, kl_balancing_loss
-from sparsemax_k import sparsemax_k, sparse_transition, convert_state_idx_to_bit_vector
 from commons import Tensor
+from sparsemax_k import sparsemax_k
 from state_prior import StatePrior
-from transition_models import MatrixTransition, MLPMatrixTransition, FactorizedTransition
+from transition_models import FactorizedTransition
+from utils import discrete_entropy, generate_all_combinations, kl_balancing_loss
+from value_prefix import ValuePrefixPredictor
+
 
 def sum_factored_logits(logits):
     """
@@ -27,58 +29,10 @@ def sum_factored_logits(logits):
     return out
 
 
-# models the prior distribution of the latent space
-
-
-# models the transition distribution of the latent space conditioned on the action
-# instantiates |A| transition matrices
-
-
-
 # predicts the value prefix
 # takes in sequence (s_t, hat_s_t+1, ..., hat_s_t+k-1)
 # and predicts the k step value prefix for each
-class ValuePrefixPredictor(nn.Module):
-    def __init__(self, num_variables, codebook_size, embedding_dim, num_values, mlp_hidden_dims):
-        super().__init__()
-        self.num_variables = num_variables
-        self.codebook_size = codebook_size
-        self.embedding_dim = embedding_dim
-        self.num_values = num_values
-        self.mlp_hidden_dims = mlp_hidden_dims
-        
-        self.latent_embedding = nn.ModuleList([nn.Embedding(codebook_size, embedding_dim) for _ in range(num_variables)])
-        # for m in self.latent_embedding:
-        #     nn.init.xavier_uniform_(m.weight)
-            
-        mlp_list = [nn.Linear(embedding_dim*num_variables, self.mlp_hidden_dims[0])]
-        for i, dim in enumerate(self.mlp_hidden_dims[1:]):
-            mlp_list.extend([
-                # nn.BatchNorm1d(self.mlp_hidden_dims[i]), 
-                nn.ReLU(), 
-                nn.Linear(self.mlp_hidden_dims[i], dim)
-            ])
-        mlp_list.extend([
-            # nn.BatchNorm1d(self.mlp_hidden_dims[-1]),
-            nn.ReLU(),
-            nn.Linear(self.mlp_hidden_dims[-1], self.num_values),
-        ])
-        self.mlp = nn.Sequential(*mlp_list)
-        
-        self.all_idcs = generate_all_combinations(codebook_size, num_variables).to(self.device)
-        
-        
-    def forward(self):
-        all_embeds = self.get_all_embeds()
-        return self.mlp(all_embeds)
 
-    def get_all_embeds(self):
-        self.all_idcs = self.all_idcs.to(self.device)
-        return torch.cat([self.latent_embedding[j](self.all_idcs[:,j]) for j in range(self.num_variables)], dim=1)
-
-    @property
-    def device(self):
-        return next(self.parameters()).device
 
 # combine everythin
 class DiscreteNet(nn.Module):
@@ -101,11 +55,11 @@ class DiscreteNet(nn.Module):
             raise ValueError('l_unroll must be at least 1')
         
         super().__init__()
-        self.state_prior = state_prior
-        self.transition = transition
-        self.value_prefix_predictor = value_prefix_predictor
+        self.state_prior: StatePrior = state_prior
+        self.transition: FactorizedTransition = transition
+        self.value_prefix_predictor: ValuePrefixPredictor = value_prefix_predictor
         self.disable_vp = value_prefix_predictor is None
-        self.emission = emission
+        self.emission: EmissionModel = emission
         self.kl_balancing_coeff = kl_balancing_coeff
         self.l_unroll = l_unroll
         self.discount_factor = discount_factor
@@ -157,9 +111,8 @@ class DiscreteNet(nn.Module):
         # prior
         state_belief = self.state_prior(batch_size)
         if self.sparsemax:
-            # print(self.state_prior.prior.data)
-            state_belief, state_bit_vecs = sparsemax_k(state_belief[0], self.sparsemax_k) 
             #TODO add batch support
+            state_belief, state_bit_vecs = sparsemax_k(state_belief[0], self.sparsemax_k, self.transition.bitconverter) 
             state_belief = state_belief[None]
         else:
             state_logits = F.log_softmax(state_belief, dim=-1)
@@ -171,29 +124,18 @@ class DiscreteNet(nn.Module):
             
             state_bit_vecs = None
 
-        prior_entropy = discrete_entropy(state_belief)
-
         # unnormalized p(z_t|x_t)
-        # print(state_belief)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
         
-        
-        
+        # compute entropies
+        prior_entropy = discrete_entropy(state_belief)
         posterior_entropy = discrete_entropy(posterior_0)        
 
         # pull posterior and prior closer together
         prior_loss = kl_balancing_loss(self.kl_balancing_coeff, state_belief, posterior_0)
         state_belief = posterior_0
         
-        
-        # sparsify further
-        # if self.sparsemax:
-        #     posterior_0, idcs = torch.topk(posterior_0, self.sparsemax_k, dim=1)
-        #     state_idcs = [state_idcs[idx] for idx in idcs[0]]
-        # print(posterior_0.shape)
-        
         # dynamics
-        #TODO for sparse stuff
         posterior_belief_sequence, posterior_bit_vec_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss = self.process_sequence(
             action_sequence, 
             dropped, 
@@ -204,9 +146,9 @@ class DiscreteNet(nn.Module):
         )
         
         obs_logits_sequence = torch.cat([obs_logits_0[:,None], obs_logits_sequence], dim=1)
-        
+
         # compute losses
-        recon_loss = self.compute_recon_loss(posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped[:,:10])
+        recon_loss = self.compute_recon_loss(posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped)
         
         # print(f"{recon_loss = }")
         if not self.disable_vp:
@@ -235,30 +177,25 @@ class DiscreteNet(nn.Module):
         if self.l_unroll > 1:
             raise ValueError("l_unroll > 1 not implemented -> posterior update will not work as intended, also value prefix is not gonna work")
         # for t in range(1,action_sequence.shape[1]):
-        for t in range(1,10):
+        for t in range(1, action_sequence.shape[1]):
             
             if not self.disable_vp:
                 # predict value prefixes
-                raise NotImplementedError
-                # value_prefix_pred.append(state_belief @ value_prefix_means[state_idcs])
+                if not self.sparsemax:
+                    value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means)
+                else:
+                    raise NotImplementedError
             
             # get the priors for the next state
-            # time1 = time()
-            prior, bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
-            # print(f"transition: {time() - time1 = }")
+            prior, state_bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
             
             # get the posterior for the next state
-            state_belief_posterior, obs_logits = self.compute_posterior(prior, bit_vecs, obs_sequence[:,t], dropped[:,t])
+            state_belief_posterior, obs_logits = self.compute_posterior(prior, state_bit_vecs, obs_sequence[:,t], dropped[:,t])
             
             # compute the dynamics loss
-            # time1 = time()
             dyn_loss = dyn_loss + kl_balancing_loss(self.kl_balancing_coeff, prior, state_belief_posterior)
-            # print(f"dyn_loss: {time() - time1 = }")
-            
-            # set belief to the posterior
-            state_belief = state_belief_posterior
-            state_idcs = bit_vecs
 
+            # log            
             posterior_belief_sequence.append(state_belief_posterior)
             posterior_bit_vecs_sequence.append(state_bit_vecs)
             obs_logits_sequence.append(obs_logits)
@@ -273,7 +210,6 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_pred = None
         
-        
         return posterior_belief_sequence, posterior_bit_vecs_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss
 
     def compute_recon_loss(self, posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped):
@@ -286,15 +222,16 @@ class DiscreteNet(nn.Module):
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):
-        return F.mse_loss(value_prefix_pred, target_value_prefixes[:,1:])
+        return F.mse_loss(value_prefix_pred, target_value_prefixes)
 
-    def k_step_extrapolation(self, state_belief, state_idcs, action_sequence, k=None):
+    def k_step_extrapolation(self, state_belief, state_bit_vec, action_sequence, k=None):
         if k is None:
             k = self.l_unroll
         state_belief_prior_sequence = []
         state_bit_vec_sequence = []
         for t in range(min(action_sequence.shape[1], k)):
-            state_belief, state_bit_vec = self.transition(state_belief, action_sequence[:, t], state_idcs)
+            state_belief, state_bit_vec = self.transition(state_belief, action_sequence[:, t], state_bit_vec)
+            # print('state_belief in k-step extrapolation: ', state_belief)
             state_belief = state_belief / state_belief.sum(dim=-1, keepdim=True)
             state_belief_prior_sequence.append(state_belief)
             state_bit_vec_sequence.append(state_bit_vec)
@@ -351,13 +288,10 @@ class LightningNet(pl.LightningModule):
         learning_rate,
         weight_decay,
         device,
-        # factorized_transition,
-        transition_mode,
         reward_support,
         disable_recon_loss = False,
         sparsemax = False,
         sparsemax_k = 30,
-        attention_batch_size = -1,
         disable_vp = False,
         action_layer_dims = None,
         kl_scaling=1.0,
@@ -367,14 +301,8 @@ class LightningNet(pl.LightningModule):
         
         #TODO factorize num_variables etc. to be top-level parameters
         self.prior = StatePrior(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], device)
-        if transition_mode == 'factorized':
-            self.transition = FactorizedTransition(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], num_actions, layer_dims=action_layer_dims, batch_size=attention_batch_size, sparse=sparsemax)
-        elif transition_mode == 'matrix':
-            self.transition = MatrixTransition(state_dim, num_actions, device)
-        elif transition_mode == 'mlp':
-            self.transition = MLPMatrixTransition(state_dim, num_actions)
-        else:
-            raise ValueError(f'Unknown transition mode: {transition_mode}')
+        self.transition = FactorizedTransition(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], num_actions, layer_dims=action_layer_dims, sparse=sparsemax)
+        
         if not disable_vp:
             self.value_prefix_predictor = ValuePrefixPredictor(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], emission_kwargs['embedding_dim'], **vp_kwargs)
         else:
@@ -403,6 +331,7 @@ class LightningNet(pl.LightningModule):
         total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Training/{key}", value)
+        self.log(f'Training/unscaled_dyn_loss', self.hparams.kl_scaling * outputs['dyn_loss'])
         self.log(f"Training/total_loss", total_loss)
         # for key, value in outputs.items():
         #     print(f"{key}: {value}")
@@ -414,17 +343,18 @@ class LightningNet(pl.LightningModule):
         total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
         for key, value in outputs.items():
             self.log(f"Validation/{key}", value)
+        self.log(f'Validation/unscaled_dyn_loss', self.hparams.kl_scaling * outputs['dyn_loss'])
         self.log(f"Validation/total_loss", total_loss)
         
         return total_loss
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.network.parameters(), lr=self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)
-        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
         return optimizer
-            
-    def backward(self, loss, optimizer, *arg):
-        loss.backward(retain_graph=True)
+    
+    # NOTE: Why did I use this one again?
+    # def backward(self, loss, optimizer, *arg):
+    #     loss.backward(retain_graph=True)
 
 
 class MLPDecoder(nn.Module):
@@ -434,10 +364,10 @@ class MLPDecoder(nn.Module):
         self.net = nn.Sequential(
             layers.Rearrange('b n d -> b (n d)'),
             nn.Linear(latent_dim*num_vars, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, output_channels * (width ** 2)),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_channels * (width ** 2)),
             layers.Rearrange('b (c h w) -> b c h w', c=output_channels, h=width, w=width),
         )
     
@@ -495,11 +425,27 @@ class Decoder(nn.Module):
             nn.ELU(alpha=1.0),
             nn.ConvTranspose2d(32, 16, (2,2), (1,1)),
             nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(16, 16, (2,2), (1,1)),
-            layers.Rearrange('b d h w -> b (d h w)'),
-            nn.Linear(16*49, output_channels*49),
-            layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
+            nn.ConvTranspose2d(16, 1, (2,2), (1,1)),
+            # layers.Rearrange('b d h w -> b (d h w)'),
+            # nn.Linear(16*49, output_channels*49),
+            # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
         )
+        
+        # test
+        # self.net = nn.Sequential(
+        #     layers.Rearrange('b n d -> b (n d)'),
+        #     nn.Linear(latent_dim*num_vars, 3*3*128),
+        #     layers.Rearrange('b (d h w) -> b d h w', h=3, w=3),
+        #     nn.ConvTranspose2d(128, 64, (3,3), (1,1)),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose2d(64, 32, (3,3), (1,1)),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose2d(32, 1, (3,3), (1,1)),
+        #     # layers.Rearrange('b d h w -> b (d h w)'),
+        #     # nn.Linear(16*49, output_channels*49),
+        #     # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
+        # )
+        
         
         # # ResNet
         # self.net = nn.Sequential(
@@ -537,8 +483,10 @@ class Decoder(nn.Module):
         # torch.nn.init.kaiming_uniform_(self.net[5].weight, mode='fan_out')
         
         
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x):        
+        out = self.net(x)
+        return out
+        
 
     def set_bn_eval(self, m):
         if isinstance(m, nn.modules.batchnorm._BatchNorm):
@@ -605,17 +553,7 @@ class EmissionModel(nn.Module):
         device: Optional[Union[str, torch.device]] = None
     ) -> Tensor:
         # TODO add batch support
-        embeds = []
         states = F.one_hot(state_bit_vecs, num_classes=2).float()
-        # states = []
-        # for i in range(len(active_states)):
-        #     state_idx = active_states[i]
-        #     # if state_idx not in self.precomputed_states:
-        #     #     self.precomputed_states[state_idx] = F.one_hot(convert_state_idx_to_bit_vector(state_idx, self.num_variables, device), num_classes=2).float()
-        #     # states.append(self.precomputed_states[state_idx])
-        #     states.append(F.one_hot(convert_state_idx_to_bit_vector(state_idx, self.num_variables, device), num_classes=2).float())
-                # self.precomputed_states[state_idx] = convert_state_idx_to_bit_vector(state_idx, self.num_variables, device)
-        # states = torch.stack(states, dim=0)
         embeds = torch.einsum("ktc,tce->kte", states, self.latent_embedding)
         return self.decoder(embeds)
 
@@ -675,22 +613,6 @@ class EmissionModel(nn.Module):
     def device(self):
         return next(self.parameters()).device
     
-def generate_all_combinations(codebook_size, num_variables):
-        all_idcs = []
-        for i, idcs in enumerate(itertools.product(range(codebook_size), repeat=num_variables)):
-            all_idcs.append(list(idcs))
-        return torch.tensor(all_idcs, dtype=torch.long)
- 
-    
-def test_generate_all_combinations():
-    codebook_size = 3
-    num_variables = 2
-    
-    all_combos = generate_all_combinations(codebook_size, num_variables)
-    target = torch.tensor([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]], dtype=torch.long)
-    assert torch.equal(all_combos, target)
 
-
-test_generate_all_combinations()
 
     

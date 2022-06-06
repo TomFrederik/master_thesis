@@ -1,22 +1,21 @@
 import argparse
-from collections import namedtuple
+import logging
 import math
 import os
+from collections import namedtuple
 
 import einops
-import torch
-from torch.utils.data import DataLoader
 import pytorch_lightning as pl
+import torch
+import torch.nn.functional as F
 from pytorch_lightning.loggers import WandbLogger
-import wandb
+from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
 
-import torch.nn.functional as F
-
-from datasets import construct_train_val_data, TransitionData
+import wandb
+from datasets import TransitionData, construct_train_val_data
 from models import LightningNet, sum_factored_logits
 from sparsemax_k import sparsemax_k
-
 
 RewardSupport = namedtuple("RewardSupport", ["min", "max", "size"])
 
@@ -66,7 +65,7 @@ class ExtrapolateCallback(pl.Callback):
         self.prior = pl_module.prior(1) # batch size 1
         
         if pl_module.hparams.sparsemax:
-            self.prior, self.state_idcs = sparsemax_k(self.prior[0], pl_module.hparams.sparsemax_k) 
+            self.prior, self.state_idcs = sparsemax_k(self.prior[0], pl_module.hparams.sparsemax_k, pl_module.transition.bitconverter) 
             #TODO add batch support
             self.prior = self.prior[None]
             
@@ -151,16 +150,18 @@ def main(
     detect_anomaly,
     test_only_dropout,
     max_datapoints,
-    transition_mode,
     track_grad_norm,
     disable_recon_loss,
-    attention_batch_size,
     sparsemax,
     sparsemax_k,
     disable_vp,
     action_layer_dims,
     max_len,
 ):
+    
+    if sparsemax:
+        logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
+        num_variables = 16
     
     pl.seed_everything(seed)
     
@@ -202,9 +203,7 @@ def main(
     )
     
     num_values = 1
-    lstm_hidden_dim = 128
     mlp_hidden_dims = [128, 128]
-    num_lstm_layers = 1
     vp_kwargs = dict(
         num_values=num_values,
         mlp_hidden_dims=mlp_hidden_dims,
@@ -221,10 +220,8 @@ def main(
         learning_rate,
         weight_decay,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        transition_mode=transition_mode,
         reward_support=RewardSupport(0,1,num_values),
         disable_recon_loss=disable_recon_loss,
-        attention_batch_size=attention_batch_size,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
         disable_vp=disable_vp,
@@ -247,15 +244,13 @@ def main(
         weight_decay=weight_decay,
         # entropy_scale=entropy_scale,
         gradient_clip_val=gradient_clip_val,
-        mlp=mlp_repr,
+        mlp_repr=mlp_repr,
         num_views=len(percentages),
         percentages=percentages,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
         max_datapoints=max_datapoints,
-        transition_mode=transition_mode,
         disable_recon_loss=disable_recon_loss,
-        attention_batch_size=attention_batch_size,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
         disable_vp=disable_vp,
@@ -309,9 +304,7 @@ if __name__ == '__main__':
     parser.add_argument('--codebook_size', type=int, default=2)
     parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--mlp_repr', action='store_true')
-    parser.add_argument('--transition_mode', type=str, default='matrix')
     parser.add_argument('--disable_recon_loss', action='store_true')
-    parser.add_argument('--attention_batch_size', type=int, default=-1)
     parser.add_argument('--sparsemax', action='store_true')
     parser.add_argument('--sparsemax_k', type=int, default=30)
     parser.add_argument('--disable_vp', action='store_true')

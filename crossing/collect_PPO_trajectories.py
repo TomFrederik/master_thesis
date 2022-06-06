@@ -10,6 +10,7 @@ from wrappers import MyFullWrapper, NumSeedsEnvWrappper, StepWrapper
 
 def main(
     num_seeds,
+    max_traj_length,
 ):
     if num_seeds is None:
         num_trajectories = 10000
@@ -33,20 +34,30 @@ def main(
     obs_list = []
     action_list = []
     done_list = []
-    for traj in tqdm(range(num_trajectories)):
+    traj = 0
+    while traj < num_trajectories:
         obs = env.reset()
         done = False
-        done_list.append(int(done))
+        done_candidates = [int(done)] 
+        obs_candidates = []
+        action_candidates = []
         while not done:
             action, _states = model.predict(obs)
-            obs_list.append(obs)
+            obs_candidates.append(obs)
             obs, rewards, done, info = env.step(action)
-            action_list.append(action)
-            done_list.append(int(done))
+            action_candidates.append(action)
+            done_candidates.append(int(done))
 
         action, _states = model.predict(obs)
-        obs_list.append(obs)
-        action_list.append(action)    
+        obs_candidates.append(obs)
+        action_candidates.append(action)    
+        if len(done_candidates) > max_traj_length:
+            continue
+        else:
+            traj += 1
+            done_list.extend(done_candidates)
+            obs_list.extend(obs_candidates)
+            action_list.extend(action_candidates)
     np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), done=np.array(done_list))
 
 
@@ -57,5 +68,6 @@ def main(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_seeds', type=int, default=None)
+    parser.add_argument('--max_traj_length', type=int, default=20)
     args = parser.parse_args()
     main(**vars(args))
