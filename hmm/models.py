@@ -82,8 +82,10 @@ class DiscreteNet(nn.Module):
 
     def compute_posterior(self, prior: Tensor, state_bit_vecs: Tensor, obs_frame: Tensor, dropped: Tensor) -> Tuple[Tensor, Tensor]:
         obs_logits = self.emission(obs_frame, state_bit_vecs)
-        
-        posterior = prior * torch.exp((obs_logits[None] * (1-dropped)).sum(dim=-1))
+        obs_probs = F.softmax(obs_logits, dim=0) # (num_states, num_views)
+        posterior = prior
+        for view in range(obs_probs.shape[1]):
+            posterior = posterior * obs_probs[:,view][None,:] * (1- dropped)[:,view]
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
 
         return posterior, obs_logits
@@ -424,7 +426,7 @@ class Decoder(nn.Module):
             nn.ELU(alpha=1.0),
             nn.ConvTranspose2d(32, 16, (2,2), (1,1)),
             nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(16, 1, (2,2), (1,1)),
+            nn.ConvTranspose2d(16, output_channels, (2,2), (1,1)),
             # layers.Rearrange('b d h w -> b (d h w)'),
             # nn.Linear(16*49, output_channels*49),
             # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
@@ -516,14 +518,12 @@ class EmissionModel(nn.Module):
         # self.precomputed_states = dict()
         
         if mlp:
-            self.decoder = MLPDecoder(embedding_dim, num_variables, output_channels=num_input_channels, width=7)
+            self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7) for _ in range(num_input_channels)])
         else:
-            self.decoder = Decoder(latent_dim=embedding_dim, num_vars=num_variables, output_channels=num_input_channels)
+            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1) for _ in range(num_input_channels)])
         self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
         
         nn.init.normal_(self.latent_embedding)
-        # for m in self.latent_embedding:
-        #     nn.init.xavier_uniform_(m.weight)
         
         print(self)
         if not sparse:
@@ -554,14 +554,13 @@ class EmissionModel(nn.Module):
         # TODO add batch support
         states = F.one_hot(state_bit_vecs, num_classes=2).float()
         embeds = torch.einsum("ktc,tce->kte", states, self.latent_embedding)
-        return self.decoder(embeds)
+        emission_probs = torch.stack([decoder(embeds)[:,0] for decoder in self.decoders], dim=1)
+        return emission_probs
 
     def get_emission_means(self):
-
         z = self.latent_embedding[torch.arange(self.num_variables),self.all_idcs,:]
-        x_dist = self.decoder(z)
-        emission_probs = x_dist
-        return torch.reshape(emission_probs, (*(self.codebook_size,)*self.num_variables, *x_dist.shape[1:]))
+        emission_probs = torch.stack([decoder(z)[:,0] for decoder in self.decoders], dim=1)
+        return torch.reshape(emission_probs, (*(self.codebook_size,)*self.num_variables, *emission_probs.shape[1:]))
         
     def compute_obs_logits_sparse(self, x, emission_means):
         # TODO add batch support

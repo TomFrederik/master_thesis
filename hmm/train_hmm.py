@@ -84,14 +84,14 @@ class ExtrapolateCallback(pl.Callback):
         ent = -(self.prior * self.prior.log())
         ent[self.prior == 0] = 0
         ent = ent.sum()
-        print(f"0: prior entropy: {ent:.4f}")
+        print(f"\n0: prior entropy: {ent:.4f}")
         
         self.posterior_0, _ = pl_module.network.compute_posterior(self.prior, self.state_idcs, self.obs[0,None], self.dropped[:,0])
         ent = -(self.posterior_0 * self.posterior_0.log())
         ent[self.posterior_0 == 0] = 0
         ent = ent.sum()
         print(f"0: post  entropy: {ent:.4f}")
-        
+        print()
         state_belief_prior_sequence, state_bit_vec_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
         if state_bit_vec_sequence is not None:
@@ -110,9 +110,7 @@ class ExtrapolateCallback(pl.Callback):
         # print(f"{state_belief_prior_sequence = }")
         # print(f"{state_idcs_prior_sequence = }")
         
-        
         emission_input = einops.rearrange(state_belief_prior_sequence, 'b t ... -> (b t) ...')
-        
         obs_hat = pl_module.emission.decode_only(emission_input, state_bit_vec_sequence).to('cpu').float()
         num_views = self.obs.shape[1]
         images = torch.stack(
@@ -199,7 +197,7 @@ def main(
     # settings for toy env
     num_actions = 4
     num_input_channels = len(percentages)
-    
+
     # emission settings    
     emission_kwargs = dict(
         num_input_channels=num_input_channels,
@@ -270,7 +268,7 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=50))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=10))
     
     # set up lightning trainer
     trainer = pl.Trainer(

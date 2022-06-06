@@ -89,7 +89,6 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
     if max_datapoints is not None:
         obs = obs[:max_datapoints]
         actions = actions[:max_datapoints]
-    multiview = multiview
     if multiview:
         multiview_wrapper = FunctionalMVW(kwargs['percentages'], kwargs['dropout'], kwargs['null_value'])
     else:
