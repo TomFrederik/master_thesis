@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from commons import Tensor
-from sparsemax_k import sparsemax_k
+from sparsemax_k import sparsemax_k, BitConverter
 from state_prior import StatePrior
 from transition_models import FactorizedTransition
 from utils import discrete_entropy, generate_all_combinations, kl_balancing_loss
@@ -70,6 +70,9 @@ class DiscreteNet(nn.Module):
         self.kl_scaling = kl_scaling
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
+        
+        if self.sparsemax:
+            self.bitconverter = BitConverter(state_prior.num_variables, 'cuda')
         
     # def compute_value_prefixes(self, reward_sequence):
     #     if self.discount_array.device != reward_sequence.device:
@@ -176,15 +179,15 @@ class DiscreteNet(nn.Module):
         
         if self.l_unroll > 1:
             raise ValueError("l_unroll > 1 not implemented -> posterior update will not work as intended, also value prefix is not gonna work")
-        # for t in range(1,action_sequence.shape[1]):
+
         for t in range(1, action_sequence.shape[1]):
-            
+            # predict value prefixes
             if not self.disable_vp:
-                # predict value prefixes
                 if not self.sparsemax:
                     value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means)
                 else:
-                    raise NotImplementedError
+                    idcs = self.bitconverter.bitvec_to_idx(posterior_bit_vecs_sequence[-1])
+                    value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means[idcs])
             
             # get the priors for the next state
             prior, state_bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
