@@ -90,6 +90,7 @@ def main(
     max_datapoints,
 ):
     
+    test_only_dropout = test_only_dropout == 'yes'
     
     
     if batch_size > 1:
@@ -200,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--null_value', type=int, default=1)
     parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--test_only_dropout', type=bool, default=False)
+    parser.add_argument('--test_only_dropout', type=str, default='no', choices=['yes', 'no'])
     parser.add_argument('--max_datapoints', type=int, default=None)
     
     ## model args
