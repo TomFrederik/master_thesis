@@ -126,9 +126,9 @@ class ExtrapolateCallback(pl.Callback):
         
 def main(
     num_seeds,
-    multiview,
+    num_views,
     null_value,
-    percentages,
+    percentage,
     dropout,
     kl_balancing_coeff,
     kl_scaling,
@@ -162,6 +162,8 @@ def main(
     if sparsemax:
         logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
         num_variables = 16
+        
+    percentages = [percentage] * num_views
     
     pl.seed_everything(seed)
     
@@ -173,7 +175,7 @@ def main(
     
     # init dataset and dataloader
     data_kwargs = dict(
-        multiview=multiview,
+        multiview=num_views > 1,
         null_value=null_value,
         percentages=percentages,
         dropout=dropout,
@@ -228,8 +230,6 @@ def main(
         action_layer_dims=action_layer_dims,
         kl_scaling=kl_scaling,
     )
-    # print(model.summarize())
-    # raise ValueError
     
     # set up wandb
     wandb_config = dict(
@@ -242,10 +242,9 @@ def main(
         l_unroll=l_unroll,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
-        # entropy_scale=entropy_scale,
         gradient_clip_val=gradient_clip_val,
         mlp_repr=mlp_repr,
-        num_views=len(percentages),
+        num_views=num_views,
         percentages=percentages,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
@@ -288,9 +287,9 @@ if __name__ == '__main__':
     
     # env settings
     parser.add_argument('--num_seeds', type=int, default=None)
-    parser.add_argument('--multiview', default=False, type=bool)
     parser.add_argument('--null_value', type=int, default=1)
-    parser.add_argument('--percentages', type=float, nargs='*', default=[1])
+    parser.add_argument('--num_views', type=int, default=1)
+    parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--test_only_dropout', default=False, type=bool)
     parser.add_argument('--max_datapoints', type=int, default=None)
