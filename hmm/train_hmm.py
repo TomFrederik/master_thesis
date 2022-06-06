@@ -158,8 +158,13 @@ def main(
     action_layer_dims,
     max_len,
 ):
-    print(sparsemax)
-    print(type(sparsemax))
+    # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
+    sparsemax = sparsemax == 'yes'
+    test_only_dropout = test_only_dropout == 'yes'
+    disable_vp = disable_vp == 'yes'
+    disable_recon_loss = disable_recon_loss == 'yes'
+    mlp_repr = mlp_repr == 'yes'
+    
     if sparsemax:
         logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
         num_variables = 16
@@ -292,7 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_views', type=int, default=1)
     parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--test_only_dropout', default=False, type=bool)
+    parser.add_argument('--test_only_dropout', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--max_datapoints', type=int, default=None)
     
     ## model args
@@ -303,11 +308,11 @@ if __name__ == '__main__':
     parser.add_argument('--num_variables', type=int, default=10)
     parser.add_argument('--codebook_size', type=int, default=2)
     parser.add_argument('--embedding_dim', type=int, default=128)
-    parser.add_argument('--mlp_repr', default=False, type=bool)
-    parser.add_argument('--disable_recon_loss', default=False, type=bool)
-    parser.add_argument('--sparsemax', default=False, type=bool)
+    parser.add_argument('--mlp_repr', default='no', type=str, choices=['yes', 'no'])
+    parser.add_argument('--disable_recon_loss', default='no', type=str, choices=['yes', 'no'])
+    parser.add_argument('--sparsemax', default='no', type=str, choices=['yes', 'no'])
+    parser.add_argument('--disable_vp', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--sparsemax_k', type=int, default=30)
-    parser.add_argument('--disable_vp', default=False, type=bool)
     parser.add_argument('--action_layer_dims', type=int, nargs='*', default=None)
     
     # training args
