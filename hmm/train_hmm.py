@@ -165,7 +165,7 @@ def main(
     
     if sparsemax:
         logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
-        num_variables = 16
+        num_variables = 15
         
     percentages = [percentage] * num_views
     
