@@ -268,7 +268,7 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=10))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=100))
     
     # set up lightning trainer
     trainer = pl.Trainer(
