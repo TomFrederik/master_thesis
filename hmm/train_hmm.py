@@ -164,7 +164,7 @@ def main(
     mlp_repr = mlp_repr == 'yes'
     
     if sparsemax:
-        logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
+        logging.warning("\n\n\nSparsemax active: Overriding number of variables to 15!!!\n\n\n")
         num_variables = 15
         
     percentages = [percentage] * num_views
