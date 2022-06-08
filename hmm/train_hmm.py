@@ -167,8 +167,8 @@ def main(
         raise NotImplementedError("Codebook size other than 2 is not supported")
     
     if sparsemax:
-        logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
-        num_variables = 16
+        logging.warning("\n\n\nSparsemax active: Overriding number of variables to 15!!!\n\n\n")
+        num_variables = 15
         
     percentages = [percentage] * num_views
     
@@ -271,7 +271,7 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=10))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=100))
     
     # set up lightning trainer
     trainer = pl.Trainer(
