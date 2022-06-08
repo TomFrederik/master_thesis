@@ -163,6 +163,9 @@ def main(
     disable_recon_loss = disable_recon_loss == 'yes'
     mlp_repr = mlp_repr == 'yes'
     
+    if codebook_size != 2:
+        raise NotImplementedError("Codebook size other than 2 is not supported")
+    
     if sparsemax:
         logging.warning("\n\n\nSparsemax active: Overriding number of variables to 16!!!\n\n\n")
         num_variables = 16

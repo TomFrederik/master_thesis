@@ -61,8 +61,7 @@ class ExtrapolateCallback(pl.Callback):
             
         num_views = self.obs.shape[1]
         obs_mean = pl_module.extrapolate_from_init_obs(self.obs[0,None], self.actions) # is just mean
-        obs_mean = einops.rearrange(obs_mean, '(b c) (h w) -> b c h w', c=num_views, h=7, w=7)
-
+        obs_mean = einops.rearrange(obs_mean, 'b c (h w) -> b c h w', h=7, w=7)
         images = torch.stack(
                 [(self.obs[:,i].to('cpu')*self.sigma)+self.mu for i in range(num_views)]\
                 + [(obs_mean[:,i].to('cpu')*self.sigma)+self.mu for i in range(num_views)],
@@ -82,6 +81,7 @@ def main(
     kl_scaling,
     discount_factor,
     learning_rate,
+    weight_decay,
     batch_size,
     num_epochs,
     num_workers,
@@ -124,16 +124,18 @@ def main(
     num_actions = 4
     
     rssm_type: str = 'discrete'
-    embedding_size: int = 100
-    rssm_node_size: int = 100
-    rssm_info = {'deter_size':100, 'stoch_size':256, 'class_size':16, 'category_size':16, 'min_std':0.1}
+    embedding_size: int = 128
+    rssm_node_size: int = 128
+    rssm_info = {'deter_size':100, 'class_size':32, 'category_size':32, 'min_std':0.1}
 
-    obs_encoder = {'layers':3, 'node_size':100, 'dist': None, 'activation':torch.nn.ELU, 'kernel':2, 'depth':16}
-    obs_decoder = {'layers':3, 'node_size':100, 'dist':'normal', 'activation':torch.nn.ELU, 'kernel':2, 'depth':16}
+    obs_encoder = {'layers':3, 'dist': None, 'activation':torch.nn.ELU, 'kernel':2, 'depth':16} # , 'node_size':100
+    obs_decoder = {'layers':3, 'dist':'normal', 'activation':torch.nn.ELU, 'kernel':2, 'depth':16} # , 'node_size':100
     worldmodel_config = dict(
+        num_views=num_views,
         action_size = num_actions,
         kl_info = {'use_kl_balance':True, 'kl_balance_scale':kl_balancing_coeff, 'use_free_nats':False},
         lr = learning_rate,
+        weight_decay = weight_decay,
         batch_size = batch_size,
         loss_scale = {'kl':kl_scaling},
         rssm_node_size = rssm_node_size,
@@ -156,8 +158,6 @@ def main(
         argparse.Namespace(**worldmodel_config),
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )
-    print(model)
-    raise ValueError
     
     # set up wandb
     wandb_config = dict(
@@ -166,11 +166,12 @@ def main(
         kl_balancing_coeff=kl_balancing_coeff,
         kl_scaling=kl_scaling,
         learning_rate=learning_rate,
-        num_views=len(percentages),
-        percentages=percentages,
+        num_views=num_views,
+        percentages=[percentage]*num_views,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
         max_datapoints=max_datapoints,
+        weight_decay=weight_decay,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Dreamer", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
@@ -210,7 +211,8 @@ if __name__ == '__main__':
     parser.add_argument('--discount_factor', type=float, default=0.99)
     
     # training args
-    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--learning_rate', type=float, default=0.0002)
+    parser.add_argument('--weight_decay', type=float, default=0.000001)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--num_epochs', type=int, default=10)

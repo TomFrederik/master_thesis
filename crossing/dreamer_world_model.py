@@ -1,10 +1,13 @@
-from dreamerv2.models.rssm import RSSM
-from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
-from dreamerv2.models.dense import DenseModel
+import math
+
 import einops
 import pytorch_lightning as pl
-import torch 
-import math
+import torch
+import torch.nn as nn
+from dreamerv2.models.dense import DenseModel
+from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
+from dreamerv2.models.rssm import RSSM
+
 
 class DreamerWorldModel(pl.LightningModule):
     def __init__(
@@ -22,9 +25,8 @@ class DreamerWorldModel(pl.LightningModule):
         self.batch_size = config.batch_size
         self.loss_scale = config.loss_scale
 
-        self.RSSM = RSSM(self.action_size, config.rssm_node_size, config.embedding_size, device, config.rssm_type, config.rssm_info)
+        self.RSSM = RSSM(self.action_size, config.rssm_node_size, config.num_views * config.embedding_size, device, config.rssm_type, config.rssm_info)
         
-        self.reward_predictor = DenseModel((1,), 356, config.reward_config) # TODO pass this as param
         category_size = config.rssm_info['category_size']
         class_size = config.rssm_info['class_size']
         stoch_size = category_size*class_size
@@ -32,14 +34,14 @@ class DreamerWorldModel(pl.LightningModule):
         deter_size = config.rssm_info['deter_size']
         modelstate_size = stoch_size + deter_size
         
-        self.ObsEncoder = ObsEncoder(config.obs_shape, config.embedding_size, config.obs_encoder)
-        self.ObsDecoder = ObsDecoder(config.obs_shape, modelstate_size, config.obs_decoder)
+        self.reward_predictor = DenseModel((1,), modelstate_size, config.reward_config) 
+        
+        self.ObsEncoders = nn.ModuleList([ObsEncoder(config.obs_shape, config.embedding_size, config.obs_encoder) for _ in range(config.num_views)])
+        self.ObsDecoders = nn.ModuleList([ObsDecoder(config.obs_shape, modelstate_size, config.obs_decoder) for _ in range(config.num_views)])
 
     def compute_train_metrics(self, obs, actions, value_prefixes, terms, dropped):
         train_metrics = dict()
-        # obs = obs[:,1:]
-        # dropped = dropped[:,1:]
-        
+
         # convert actions to one-hot vectors
         actions = torch.nn.functional.one_hot(actions, self.action_size)
 
@@ -49,8 +51,9 @@ class DreamerWorldModel(pl.LightningModule):
         actions = einops.rearrange(actions, 'b t ... -> t b ...')
         nonterms = einops.rearrange(nonterms, 'b t ... -> t b ...')
         value_prefixes = einops.rearrange(value_prefixes, 'b t ... -> t b ...')
+        dropped = einops.rearrange(dropped, 'b t ... -> t b ...')
 
-        model_loss, kl_loss, obs_loss, value_prefix_loss, prior_dist, post_dist, posterior = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped)
+        model_loss, kl_loss, recon_loss, value_prefix_loss, prior_dist, post_dist, posterior = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped)
 
         with torch.no_grad():
             prior_ent = torch.mean(prior_dist.entropy())
@@ -58,7 +61,7 @@ class DreamerWorldModel(pl.LightningModule):
 
         train_metrics['model_loss'] = model_loss.mean()
         train_metrics['kl_loss'] = kl_loss.mean()
-        train_metrics['obs_loss'] = obs_loss.mean()
+        train_metrics['recon_loss'] = recon_loss.mean()
         train_metrics['value_prefix_loss'] = value_prefix_loss.mean()
         train_metrics['prior_entropy'] = prior_ent.mean()
         train_metrics['posterior_entropy'] = post_ent.mean()
@@ -82,47 +85,43 @@ class DreamerWorldModel(pl.LightningModule):
 
 
     def representation_loss(self, obs, actions, value_prefixes, nonterms, dropped):
-        embed = self.ObsEncoder(obs)                                         #t to t+seq_len   
+        embed = torch.cat([enc(obs) for enc in self.ObsEncoders], dim=-1) #t to t+seq_len   
         prev_rssm_state = self.RSSM._init_rssm_state(self.batch_size)   
         prior, posterior = self.RSSM.rollout_observation(len(obs), embed, actions, nonterms, prev_rssm_state)
         post_modelstate = self.RSSM.get_model_state(posterior)               #t to t+seq_len   
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
-        reward_dist = self.reward_predictor(post_modelstate[:-1])[...,0]
-        reward_loss = self._reward_loss(reward_dist, value_prefixes[1:])
-        obs_dist = self.ObsDecoder(post_modelstate[:-1])                     #t to t+seq_len-1  
-        obs_loss = self._obs_loss(obs_dist, obs[:-1], dropped[:,:-1])
+        reward_dist = self.reward_predictor(post_modelstate)[...,0]
+        reward_loss = self._reward_loss(reward_dist, value_prefixes)
+        obs_dist = torch.stack([dec(x) for dec, x in zip(self.ObsDecoders, torch.chunk(post_modelstate, self.config.num_views, -1))], dim=1)
+        recon_loss = self._recon_loss(obs_dist, obs, dropped)
 
-        model_loss = self.loss_scale['kl'] * div + obs_loss + reward_loss
+        model_loss = self.loss_scale['kl'] * div + recon_loss + reward_loss
 
-        return model_loss, div, obs_loss, reward_loss, prior_dist, post_dist, posterior
+        return model_loss, div, recon_loss, reward_loss, prior_dist, post_dist, posterior
 
     def extrapolate_from_init_obs(self, init_obs, action_sequence):
-        embed = embed = self.ObsEncoder(init_obs)                                         #t to t+seq_len   
+        embed = embed = self.ObsEncoders[0](init_obs)                                         #t to t+seq_len   
         next_rssm_states = self.RSSM.extrapolate_from_init_obs(embed, action_sequence)
         model_states = self.RSSM.get_model_state(next_rssm_states)
-        obs_dist = self.ObsDecoder(model_states)                     #t to t+seq_len-1  
+        obs_dist = torch.stack([dec(x) for dec, x in zip(self.ObsDecoders, torch.chunk(model_states, self.config.num_views, -1))], dim=1)
         return obs_dist
 
     def _reward_loss(self, reward_dist, rewards):
         reward_loss = torch.nn.functional.mse_loss(rewards, reward_dist)
         return reward_loss
     
-    def _obs_loss(self, obs_mean, obs, dropped):
+    def _recon_loss(self, obs_mean, obs, dropped):
         std = 1 # TODO?
         
-        obs_mean = einops.rearrange(obs_mean, '(t c) (h w) -> t 1 c h w ', t=obs.shape[0], c=obs.shape[2], h=obs.shape[3], w=obs.shape[4])
-        dropped = einops.rearrange(dropped, 't b c -> b t c')
+        obs_mean = einops.rearrange(obs_mean, 't c (h w) -> t 1 c h w ', h=obs.shape[3], w=obs.shape[4])
         exponent = -(obs[dropped == 0] - obs_mean[dropped == 0])**2 / (2*std**2)
-        # constant = -0.5 * torch.prod(torch.tensor(obs.shape[2:])) * math.log(2*std**2*math.pi) # this is unnecessary if we are not changing the std
-        constant = 0 # constant is different for different num views -> doesn't make sense to use it if we're interested in predictive quality
-        exponent = torch.sum(exponent)
-        obs_loss = -(exponent + constant)
+        recon_loss = -torch.sum(exponent)
         num_non_dropped = torch.sum(1-dropped)
         if num_non_dropped == 0:
-            obs_loss = 0*obs_loss
+            recon_loss = 0*recon_loss
         else:
-            obs_loss = obs_loss / num_non_dropped # average over non missing observations
-        return obs_loss
+            recon_loss = recon_loss / num_non_dropped # average over non missing observations
+        return recon_loss
     
     def _kl_loss(self, prior, posterior):
         prior_dist = self.RSSM.get_dist(prior)
@@ -145,5 +144,5 @@ class DreamerWorldModel(pl.LightningModule):
         return prior_dist, post_dist, kl_loss
     
     def configure_optimizers(self):
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.config.lr)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
         return self.optimizer

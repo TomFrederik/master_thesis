@@ -14,25 +14,20 @@ class ValuePrefixPredictor(nn.Module):
         self.mlp_hidden_dims = mlp_hidden_dims
         
         self.latent_embedding = nn.ModuleList([nn.Embedding(codebook_size, embedding_dim) for _ in range(num_variables)])
-        # for m in self.latent_embedding:
-        #     nn.init.xavier_uniform_(m.weight)
             
         mlp_list = [nn.Linear(embedding_dim*num_variables, self.mlp_hidden_dims[0])]
         for i in range(len(self.mlp_hidden_dims)-1):
             mlp_list.extend([
-                # nn.BatchNorm1d(self.mlp_hidden_dims[i]), 
                 nn.ReLU(), 
                 nn.Linear(self.mlp_hidden_dims[i], self.mlp_hidden_dims[i+1])
             ])
         mlp_list.extend([
-            # nn.BatchNorm1d(self.mlp_hidden_dims[-1]),
             nn.ReLU(),
             nn.Linear(self.mlp_hidden_dims[-1], self.num_values),
         ])
         self.mlp = nn.Sequential(*mlp_list)
         
         self.all_idcs = generate_all_combinations(codebook_size, num_variables).to(self.device)
-        
         
     def forward(self):
         all_embeds = self.get_all_embeds()

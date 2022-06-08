@@ -207,7 +207,7 @@ class SingleTrajToyData(Dataset):
         terms = np.zeros_like(action)
         terms[-1] = 1
         
-        value_prefixes = 0.9 ** np.arange(len(action)-1)[::-1]
+        value_prefixes = 0.9 ** np.arange(len(action))[::-1]
         
         return (
             obs.astype(np.float32),
