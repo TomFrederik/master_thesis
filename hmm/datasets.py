@@ -77,7 +77,7 @@ def _extract_transition_tuples(dones, action, obs):
     # val_data = TransitionData(val_transitions, sigma, mu, mvwrapper, drop=True)
     # return train_data, val_data
 
-def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, max_len=20, **kwargs):
+def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, traj_max_len=20, **kwargs):
     data = np.load(data_path)
     dones = data['done']
     obs = data['obs']
@@ -85,7 +85,7 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
         
     sigma = np.std(obs)
     mu = np.mean(obs)
-    obs, actions = _split_trajs(dones, action, obs, max_len)
+    obs, actions = _split_trajs(dones, action, obs, traj_max_len)
     if max_datapoints is not None:
         obs = obs[:max_datapoints]
         actions = actions[:max_datapoints]
@@ -100,10 +100,16 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
 
-def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, max_len=20, **kwargs):
-    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, max_len, **kwargs)
-    train_data = SingleTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout)
-    val_data = SingleTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True)
+def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, traj_max_len=20, **kwargs):
+    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, traj_max_len, **kwargs)
+    if kwargs['batch_size'] == 1:
+        train_data = SingleTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout)
+        val_data = SingleTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True)
+    elif kwargs['batch_size'] > 1:
+        train_data = BatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'])
+        val_data = BatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'])
+    else:
+        raise ValueError(f'batch_size must be 1 or greater, but is {kwargs["batch_size"]}')
     return train_data, val_data
 
 
@@ -207,7 +213,9 @@ class SingleTrajToyData(Dataset):
         terms = np.zeros_like(action)
         terms[-1] = 1
         
-        value_prefixes = 0.9 ** np.arange(len(action))[::-1]
+
+        value_prefixes = np.zeros_like(action)
+        value_prefixes[-1] = 1
         
         return (
             obs.astype(np.float32),
@@ -215,49 +223,71 @@ class SingleTrajToyData(Dataset):
             value_prefixes.astype(np.float32),
             terms.astype(np.int64), #terms
             dropped.astype(np.float32),
-            # player_pos.astype(np.float32),
+            player_pos.astype(np.float32),
         )
 
 class BatchTrajToyData(Dataset):
-    def __init__(self, data_path, seq_len=12, **kwargs):
-        data = np.load(data_path)
-        dones = data['done']
-        self.obs = data['obs']
-        self.action = data['action']
-        self.sigma = np.std(self.obs)
-        self.mu = np.mean(self.obs)
-        self._split_trajs(dones)
-        self.seq_len = seq_len
+    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, max_len):
+        self.obs = obs
+        self.actions = actions
+        self.sigma = sigma
+        self.mu = mu
+        self.drop = drop
+        self.mvwrapper = mvwrapper
+        self.max_len = max_len
         
-    def _split_trajs(self, dones):
-        stop_idcs = np.where(dones == 1)[0] + 1
-        start_idcs = np.concatenate(([0], stop_idcs[:-1]))
-        action = []
-        for i, (start, stop) in enumerate(zip(start_idcs, stop_idcs)):
-            action.append(self.action[start-i:stop-i-1])
-        self.action = action
-        self.obs = [self.obs[start:stop] for start, stop in zip(start_idcs, stop_idcs)]
-        
-    def __len__(self):
-        return len(self.action)
+    def set_drop(self, drop: bool):
+        self.drop = drop
     
-    def __getitem__(self, idx):
-        obs = (self.obs[idx] - self.mu) / self.sigma
-        return (
-            obs[:,None].astype(np.float32), # add channel dimension
-            self.action[idx].astype(np.int64),
-            np.zeros_like(self.action[idx]), #rewards
-        )
+    def __len__(self):
+        return len(self.actions)
+    
+    def get_no_drop(self, idx):
+        return self.__getitem__(idx, force_no_drop=True)
+    
+    def __getitem__(self, idx, force_no_drop=False):
 
-    def truncate_sequence(self, sequence):
-        if self.seq_len >= len(sequence):
-            return torch.from_numpy(sequence)
+        # compute traj length and pad length
+        traj_length = len(self.actions[idx])
+        start_idx = np.random.choice(traj_length)
+        pad_length = max(0, self.max_len + start_idx - traj_length)
+        
+        # retrieve and pad actions
+        action = self.actions[idx][start_idx:start_idx+self.max_len]
+        action = np.append(action, np.zeros(pad_length))
+        # add null action since we did not record action at last step
+        action = np.append(action, np.zeros_like(action[-1]))
+
+        # retrieve and pad observations
+        obs = self.obs[idx][start_idx:start_idx+self.max_len+1]
+        obs = np.concatenate([obs, np.zeros((pad_length, *obs.shape[1:]))], axis=0)
+        if self.mvwrapper: # stack views along channel dimension
+            output = self.mvwrapper.observation(obs, (force_no_drop or not self.drop)) 
+            obs = output['views']
+            dropped = output['dropped']
+            obs = np.stack([o for key, o in obs.items() if key.startswith('view')], axis=1) 
         else:
-            return torch.from_numpy(sequence[:self.seq_len]) # only use first T frames #TODO: make this better
+            obs = obs[:,None]
+            dropped = np.zeros((obs.shape[0], 1))
+        
+        player_pos = np.zeros_like(obs)
+        player_pos[obs == 0] = 1
+        
+        # center and normalize
+        obs = (obs - self.mu) / self.sigma
+        
+        nonterms = np.ones_like(action)
+        if pad_length > 0:
+            nonterms[-pad_length:] = 0
 
-    def truncate_tuple(self, tpl):
-        return tuple(map(self.truncate_sequence, tpl))
-
-    def collate_fn(self, batch_list):
-        tpl = tuple(map(self.truncate_tuple, zip(*batch_list)))
-        return tuple(map(torch.stack, tpl))
+        value_prefixes = np.zeros_like(action)
+        if self.max_len + start_idx - traj_length >= 0:
+            value_prefixes[-(self.max_len + start_idx - traj_length + 1):] = 1
+        return (
+            obs.astype(np.float32),
+            action.astype(np.int64),
+            value_prefixes.astype(np.float32),
+            nonterms.astype(np.int64), #terms
+            dropped.astype(np.float32),
+            player_pos.astype(np.float32),
+        )

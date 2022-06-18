@@ -1,6 +1,7 @@
 import itertools
+import logging
 from time import time
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, TypeVar
 
 import einops
 import einops.layers.torch as layers
@@ -14,8 +15,8 @@ from sparsemax_k import sparsemax_k, BitConverter
 from state_prior import StatePrior
 from transition_models import FactorizedTransition
 from utils import discrete_entropy, generate_all_combinations, kl_balancing_loss
-from value_prefix import ValuePrefixPredictor
-
+from value_prefix import DenseValuePrefixPredictor, SparseValuePrefixPredictor
+from torch.distributions import OneHotCategorical, Categorical
 
 def sum_factored_logits(logits):
     """
@@ -40,7 +41,7 @@ class DiscreteNet(nn.Module):
         self,
         state_prior: StatePrior,
         transition,
-        value_prefix_predictor: ValuePrefixPredictor,
+        value_prefix_predictor: Union[DenseValuePrefixPredictor, SparseValuePrefixPredictor],
         emission,
         kl_balancing_coeff: float,
         l_unroll: int,
@@ -50,6 +51,7 @@ class DiscreteNet(nn.Module):
         sparsemax: bool = False,
         sparsemax_k: int = 30,
         kl_scaling: float = 1.0,
+        force_uniform_prior: bool = False,
     ):
         if l_unroll < 1:
             raise ValueError('l_unroll must be at least 1')
@@ -57,7 +59,7 @@ class DiscreteNet(nn.Module):
         super().__init__()
         self.state_prior: StatePrior = state_prior
         self.transition: FactorizedTransition = transition
-        self.value_prefix_predictor: ValuePrefixPredictor = value_prefix_predictor
+        self.value_prefix_predictor: Union[DenseValuePrefixPredictor, SparseValuePrefixPredictor] = value_prefix_predictor
         self.disable_vp = value_prefix_predictor is None
         self.emission: EmissionModel = emission
         self.kl_balancing_coeff = kl_balancing_coeff
@@ -68,6 +70,7 @@ class DiscreteNet(nn.Module):
         self.sparsemax = sparsemax
         self.sparsemax_k = sparsemax_k
         self.kl_scaling = kl_scaling
+        self.force_uniform_prior = force_uniform_prior
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
         
@@ -82,15 +85,14 @@ class DiscreteNet(nn.Module):
 
     def compute_posterior(self, prior: Tensor, state_bit_vecs: Tensor, obs_frame: Tensor, dropped: Tensor) -> Tuple[Tensor, Tensor]:
         obs_logits = self.emission(obs_frame, state_bit_vecs)
-        obs_probs = F.softmax(obs_logits, dim=0) # (num_states, num_views)
+        obs_probs = F.softmax(obs_logits, dim=1) # (batch, num_states, num_views)
         posterior = prior
-        for view in range(obs_probs.shape[1]):
-            posterior = posterior * obs_probs[:,view][None,:] * (1- dropped)[:,view]
+        for view in range(obs_probs.shape[-1]):
+            posterior = posterior * obs_probs[...,view] * (1- dropped)[:, None, view]
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
-
         return posterior, obs_logits
 
-    def forward(self, obs_sequence, action_sequence, value_prefix_sequence, dropped):
+    def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
         outputs = dict()
 
         batch_size, seq_len, channels, h, w = obs_sequence.shape
@@ -109,16 +111,13 @@ class DiscreteNet(nn.Module):
             # obs sequence has shape (batch, seq, num_views, 7, 7)
             
             # get vp means for each state
-            value_prefix_means = self.value_prefix_predictor()[:,0] # has shape (num_states, )
-        else:
-            value_prefix_means = None
+            # value_prefix_means = self.value_prefix_predictor()[:,0] # has shape (num_states, )
 
         # prior
         state_belief = self.state_prior(batch_size)
         if self.sparsemax:
             #TODO add batch support
-            state_belief, state_bit_vecs = sparsemax_k(state_belief[0], self.sparsemax_k, self.transition.bitconverter) 
-            state_belief = state_belief[None]
+            state_belief, state_bit_vecs = sparsemax_k(state_belief, self.sparsemax_k) 
         else:
             state_logits = F.log_softmax(state_belief, dim=-1)
             temp = state_logits[:,0]
@@ -132,45 +131,70 @@ class DiscreteNet(nn.Module):
         # unnormalized p(z_t|x_t)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
         
+        
         # compute entropies
-        prior_entropy = discrete_entropy(state_belief)
-        posterior_entropy = discrete_entropy(posterior_0)        
+        prior_entropy = discrete_entropy(state_belief).mean()
+        posterior_entropy = discrete_entropy(posterior_0).mean()    
 
         # pull posterior and prior closer together
-        prior_loss = kl_balancing_loss(self.kl_balancing_coeff, state_belief, posterior_0)
+        prior_loss = kl_balancing_loss(self.kl_balancing_coeff, state_belief, posterior_0, nonterms[:,0])
         state_belief = posterior_0
-        
+
         # dynamics
         posterior_belief_sequence, posterior_bit_vec_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss = self.process_sequence(
             action_sequence, 
             dropped, 
             posterior_0, 
             state_bit_vecs, 
-            value_prefix_means, 
-            obs_sequence
+            obs_sequence,
+            nonterms,
+            player_pos,
         )
         
         obs_logits_sequence = torch.cat([obs_logits_0[:,None], obs_logits_sequence], dim=1)
 
         # compute losses
-        recon_loss = self.compute_recon_loss(posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped)
+        recon_loss = self.compute_recon_loss(posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped, nonterms)
         
         # print(f"{recon_loss = }")
         if not self.disable_vp:
             value_prefix_loss = self.compute_vp_loss(value_prefix_pred, target_value_prefixes) # TODO if we use longer rollout need to adapt this
         else:
             value_prefix_loss = 0
-        # log the losses
-        outputs['prior_loss'] = prior_loss
-        outputs['value_prefix_loss'] = value_prefix_loss
+            
+        print(value_prefix_pred)
+        print(target_value_prefixes)
+
+        outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
+        outputs['value_prefix_loss'] = value_prefix_loss 
         outputs['recon_loss'] = recon_loss / dimension
         outputs["dyn_loss"] = self.kl_scaling * dyn_loss / self.l_unroll
         outputs['prior_entropy'] = (prior_entropy + sum(prior_entropies))/(len(prior_entropies) + 1)
         outputs['posterior_entropy'] = (posterior_entropy + sum(posterior_entropies))/(len(posterior_entropies) + 1)
+        outputs['posterior_belief_sequence'] = posterior_belief_sequence
+        outputs['posterior_bit_vec_sequence'] = posterior_bit_vec_sequence
         
         return outputs
 
-    def process_sequence(self, action_sequence, dropped, state_belief, state_bit_vecs, value_prefix_means, obs_sequence):
+    def prepare_vp_input(self, belief, bit_vecs):
+        if self.sparsemax:
+            # return belief, bit_vecs.flatten(start_dim=0)[None].float()
+            return (belief[...,None] * bit_vecs[None]).flatten(start_dim=1)
+            # return torch.cat([belief, bit_vecs.flatten()[None]], dim=-1)
+        else:
+            return belief
+
+    def process_sequence(
+        self, 
+        action_sequence, 
+        dropped, 
+        state_belief, 
+        state_bit_vecs, 
+        # value_prefix_means, 
+        obs_sequence,
+        nonterms,
+        player_pos,
+    ):
         dyn_loss = 0
         value_prefix_pred = []
         posterior_belief_sequence = [state_belief]
@@ -185,36 +209,46 @@ class DiscreteNet(nn.Module):
         for t in range(1, action_sequence.shape[1]):
             # predict value prefixes
             if not self.disable_vp:
-                if not self.sparsemax:
-                    value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means)
+                if self.sparsemax:
+                    vp_input = posterior_bit_vecs_sequence[-1].float()
+                    value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
                 else:
-                    idcs = self.bitconverter.bitvec_to_idx(posterior_bit_vecs_sequence[-1])
-                    value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means[idcs])
+                    vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
+                    value_prefix_pred.append(self.value_prefix_predictor(vp_input))
+                    
             
             # get the priors for the next state
             prior, state_bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
-            
+
             # get the posterior for the next state
             state_belief_posterior, obs_logits = self.compute_posterior(prior, state_bit_vecs, obs_sequence[:,t], dropped[:,t])
+            # print(torch.sort(state_belief_posterior, dim=-1)[0][:,-10:])
+            # print(torch.sort(state_belief_posterior, dim=-1)[1][:,-10:])
             
             # compute the dynamics loss
-            dyn_loss = dyn_loss + kl_balancing_loss(self.kl_balancing_coeff, prior, state_belief_posterior)
+            dyn_loss = dyn_loss + kl_balancing_loss(self.kl_balancing_coeff, prior, state_belief_posterior, nonterms[:,t])
 
             # log            
             posterior_belief_sequence.append(state_belief_posterior)
             posterior_bit_vecs_sequence.append(state_bit_vecs)
             obs_logits_sequence.append(obs_logits)
-            prior_entropies.append(discrete_entropy(prior))
-            posterior_entropies.append(discrete_entropy(state_belief_posterior))
-        
-        # predict value prefixes
-        if not self.disable_vp:
-            if not self.sparsemax:
-                value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means)
+            if nonterms[:,t].sum() > 0:
+                prior_entropies.append((discrete_entropy(prior) * nonterms[:,t]).sum() / nonterms[:,t].sum())
+                posterior_entropies.append((discrete_entropy(state_belief_posterior) * nonterms[:,t]).sum() / nonterms[:,t].sum())
             else:
-                idcs = self.bitconverter.bitvec_to_idx(posterior_bit_vecs_sequence[-1])
-                value_prefix_pred.append(posterior_belief_sequence[-1] @ value_prefix_means[idcs])
+                prior_entropies.append(torch.zeros_like(prior_entropies[-1]))
+                posterior_entropies.append(torch.zeros_like(posterior_entropies[-1]))
+        # predict value prefixes
+        if self.sparsemax:
+            vp_input = posterior_bit_vecs_sequence[-1].float()
+            value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
+        else:
+            vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
+            value_prefix_pred.append(self.value_prefix_predictor(vp_input))
+                    
         
+        # for i in range(len(posterior_belief_sequence)):
+        #     print(f"{i = } : top-5 = {torch.argsort(posterior_belief_sequence[i][0])[-5:].detach().cpu().numpy()}, ent = {discrete_entropy(posterior_belief_sequence[i]):.3f}")
         
         
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)
@@ -226,13 +260,13 @@ class DiscreteNet(nn.Module):
         
         return posterior_belief_sequence, posterior_bit_vecs_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss
 
-    def compute_recon_loss(self, posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped):
+    def compute_recon_loss(self, posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped, nonterms):
         # posterior_belief_sequence has shape (batch, seq_len, num_states)
-        # obs_logits_sequence has shape (num_active_state, seq_len, num_views)
+        # obs_logits_sequence has shape (batch, seq_len, num_active_state, num_views)
         # dropped has shape (batch, seq_len, num_views)
         recon_loss = 0
         if not self.disable_recon_loss:
-            recon_loss = (-(1-dropped)[:,:,None,:] * posterior_belief_sequence[:,:,:,None] * einops.rearrange(obs_logits_sequence,"num_states seq views -> seq num_states views")[None]).sum(dim=[1,2,3]).mean()
+            recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=[2,3]) * nonterms).sum(dim=-1).mean()
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):
@@ -252,7 +286,7 @@ class DiscreteNet(nn.Module):
         # print(state_belief_prior_sequence)
         # print(state_idcs_prior_sequence)
         if state_bit_vec_sequence[-1] is not None:
-            state_bit_vec_sequence = torch.stack(state_bit_vec_sequence, dim=0)
+            state_bit_vec_sequence = torch.stack(state_bit_vec_sequence, dim=1)
         else:
             state_bit_vec_sequence = None
         return torch.stack(state_belief_prior_sequence, dim=1), state_bit_vec_sequence
@@ -309,16 +343,29 @@ class LightningNet(pl.LightningModule):
         disable_vp = False,
         action_layer_dims = None,
         kl_scaling=1.0,
+        force_uniform_prior=False,
+        prior_noise_scale=0.0,
     ):
         super().__init__()
         self.save_hyperparameters()
         
         #TODO factorize num_variables etc. to be top-level parameters
-        self.prior = StatePrior(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], device)
+        if force_uniform_prior and prior_noise_scale == 0 and sparsemax:
+            logging.warning("Using sparsemax + uniform prior + prior_noise_scale 0 is probably not going to work!.")
+        self.prior = StatePrior(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], device, force_uniform_prior, prior_noise_scale)
         self.transition = FactorizedTransition(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], num_actions, layer_dims=action_layer_dims, sparse=sparsemax)
         
         if not disable_vp:
-            self.value_prefix_predictor = ValuePrefixPredictor(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], emission_kwargs['embedding_dim'], **vp_kwargs)
+            if sparsemax:
+                state_size = sparsemax_k * (emission_kwargs['num_variables'])
+            else:
+                state_size = emission_kwargs['codebook_size'] ** emission_kwargs['num_variables']
+            if sparsemax:
+                self.value_prefix_predictor = SparseValuePrefixPredictor(emission_kwargs['num_variables'], **vp_kwargs)
+            else:
+                self.value_prefix_predictor = DenseValuePrefixPredictor(state_size, **vp_kwargs)
+            # self.value_prefix_predictor = NewValuePrefixPredictor(49, **vp_kwargs)
+            # self.value_prefix_predictor = ValuePrefixPredictor(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], emission_kwargs['embedding_dim'], **vp_kwargs)
         else:
             self.value_prefix_predictor = None
         
@@ -339,34 +386,41 @@ class LightningNet(pl.LightningModule):
             sparsemax,
             sparsemax_k,
             kl_scaling,
+            force_uniform_prior,
         )
     
-    def forward(self, obs, actions, value_prefixes, terms, dropped):
-        return self.network(obs, actions, value_prefixes, dropped)
+    def forward(self, obs, actions, value_prefixes, nonterms, dropped, player_pos):
+        return self.network(obs, actions, value_prefixes, nonterms, dropped, player_pos)
     
     def training_step(self, batch, batch_idx):
         outputs = self(*batch)
-        total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
+        total_loss = sum(list(val for (key, val) in outputs.items() if key.endswith('loss')))
         for key, value in outputs.items():
-            self.log(f"Training/{key}", value)
+            if not key.endswith('sequence'):
+                self.log(f"Training/{key}", value)
         unscaled_dyn_loss = outputs['dyn_loss'] / self.hparams.kl_scaling
+        unscaled_prior_loss = outputs['prior_loss'] / self.hparams.kl_scaling
         self.log(f'Training/unscaled_dyn_loss', unscaled_dyn_loss)
+        self.log(f'Training/unscaled_prior_loss', unscaled_prior_loss)
         self.log(f"Training/total_loss", total_loss)
-        self.log(f"Training/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss)
-        # for key, value in outputs.items():
-        #     print(f"{key}: {value}")
+        self.log(f"Training/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
+        self.log(f"Training/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         
         return total_loss
     
     def validation_step(self, batch, batch_idx):
         outputs = self(*batch)
-        total_loss = sum(list(val for (key, val) in outputs.items() if not key.endswith('entropy')))
+        total_loss = sum(list(val for (key, val) in outputs.items() if key.endswith('loss')))
         for key, value in outputs.items():
-            self.log(f"Validation/{key}", value)
+            if not key.endswith('sequence'):
+                self.log(f"Validation/{key}", value)
         unscaled_dyn_loss = outputs['dyn_loss'] / self.hparams.kl_scaling
+        unscaled_prior_loss = outputs['prior_loss'] / self.hparams.kl_scaling
         self.log(f'Validation/unscaled_dyn_loss', unscaled_dyn_loss)
+        self.log(f'Validation/unscaled_prior_loss', unscaled_prior_loss)
         self.log(f"Validation/total_loss", total_loss)
-        self.log(f"Validation/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss)
+        self.log(f"Validation/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
+        self.log(f"Validation/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         
         return total_loss
     
@@ -532,7 +586,6 @@ class EmissionModel(nn.Module):
         self.codebook_size = codebook_size
         self.num_variables = num_variables
         self.sparse = sparse
-        # self.precomputed_states = dict()
         
         if mlp:
             self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7) for _ in range(num_input_channels)])
@@ -554,8 +607,7 @@ class EmissionModel(nn.Module):
         if self.sparse:
             if state_bit_vecs is None:
                 raise ValueError('state_bit_vecs must be provided for sparse model')
-            
-            emission_means = self.get_emission_means_sparse(state_bit_vecs, x.device)
+            emission_means = self.get_emission_means_sparse(state_bit_vecs)
             obs_logits = self.compute_obs_logits_sparse(x, emission_means)
         else:
             # assuming a diagonal gaussian with unit variance
@@ -566,29 +618,28 @@ class EmissionModel(nn.Module):
     def get_emission_means_sparse(
         self, 
         state_bit_vecs: Tensor, 
-        device: Optional[Union[str, torch.device]] = None
     ) -> Tensor:
-        # TODO add batch support
         states = F.one_hot(state_bit_vecs, num_classes=2).float()
-        embeds = torch.einsum("ktc,tce->kte", states, self.latent_embedding)
+        embeds = torch.einsum("bktc,tce->bkte", states, self.latent_embedding)
+        batch, k, *_ = embeds.shape
+        embeds = einops.rearrange(embeds, 'batch k vars dim -> (batch k) vars dim')
         emission_probs = torch.stack([decoder(embeds)[:,0] for decoder in self.decoders], dim=1)
+        emission_probs = einops.rearrange(emission_probs, '(batch k) views h w -> batch k views h w', batch=batch, k=k)
         return emission_probs
 
     def get_emission_means(self):
         z = self.latent_embedding[torch.arange(self.num_variables),self.all_idcs,:]
         emission_probs = torch.stack([decoder(z)[:,0] for decoder in self.decoders], dim=1)
-        return torch.reshape(emission_probs, (*(self.codebook_size,)*self.num_variables, *emission_probs.shape[1:]))
+        return emission_probs
         
     def compute_obs_logits_sparse(self, x, emission_means):
-        # TODO add batch support
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means - x[None,0]) ** 2).sum(dim=[-2,-1]) / 2 #- math.log(2*math.pi) / 2 * emission_means.shape[-2] * emission_means.shape[-1]
+        output = - ((emission_means - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
         return output
     
     def compute_obs_logits(self, x, emission_means):
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means[None] - x[(slice(None),) + (None,)*self.num_variables]) ** 2).sum(dim=[-2,-1]) / 2 #- math.log(2*math.pi) / 2 * emission_means.shape[-2] * emission_means.shape[-1]
-        output = einops.rearrange(output, 'batch ... num_views -> (...) (batch num_views)') # TODO BATCH DIM SHOULD BE SOMEWHERE ELSE
+        output = - ((emission_means[None] - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
         return output
 
     
@@ -614,7 +665,7 @@ class EmissionModel(nn.Module):
         # TODO make this more efficient using batching
         # compute expected value
         if self.sparse:
-            emission_means = torch.stack([self.get_emission_means_sparse(bit_vec, device=latent_dist.device) for bit_vec in bit_vecs], dim=0)
+            emission_means = self.get_emission_means_sparse(bit_vecs)
             mean_prediction = (latent_dist[...,None,None,None] * emission_means).sum(dim=1)
         else:
             emission_means = self.get_emission_means()

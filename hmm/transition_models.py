@@ -34,8 +34,14 @@ class FactorizedTransition(nn.Module):
         self.state_emb = nn.Parameter(torch.zeros(codebook_size**num_variables, embedding_dim))
         nn.init.xavier_uniform_(self.state_emb.data) # necessary to get uniform distribution at init
         
-        self.keys = nn.ModuleList([StateFeatures(embedding_dim, hidden_dim, layer_dims) for _ in range(num_actions)])
-        self.queries = nn.ModuleList([StateFeatures(embedding_dim, hidden_dim, layer_dims) for _ in range(num_actions)])
+        self.key_features = nn.Parameter(torch.zeros(num_actions, embedding_dim, hidden_dim))
+        self.query_features = nn.Parameter(torch.zeros(num_actions, embedding_dim, hidden_dim))
+
+        nn.init.xavier_uniform_(self.key_features.data) # necessary to get uniform distribution at init
+        nn.init.xavier_uniform_(self.query_features.data) # necessary to get uniform distribution at init
+
+        self.key_module = self.build_module(hidden_dim, layer_dims)
+        self.query_module = self.build_module(hidden_dim, layer_dims)
         
         if sparse:
             self.bitconverter = BitConverter(bits=num_variables, device='cuda' if torch.cuda.is_available() else 'cpu')
@@ -44,36 +50,34 @@ class FactorizedTransition(nn.Module):
         self, 
         state_belief: Tensor, 
         action: Tensor, 
-        state_idcs: Optional[Tensor] = None,
+        state_bit_vecs: Optional[Tensor] = None,
         ) -> Tuple[Tensor, Union[Tensor, None]]:
-
+        
         if self.sparse:
-            return sparse_transition(self.state_emb, self.state_emb, self.keys[action], self.queries[action], state_belief, state_idcs, self.bitconverter)
+            return sparse_transition(self.state_emb, self.key_features[action], self.query_features[action], self.key_module, self.query_module, state_belief, state_bit_vecs, self.bitconverter)
         else:
-            return dense_transition(self.state_emb, self.state_emb, self.keys[action], self.queries[action], state_belief)
+            return dense_transition(self.state_emb, self.key_features[action], self.query_features[action], self.key_module, self.query_module, state_belief)
     
     @property
     def device(self):
         return next(self.parameters()).device
 
-class StateFeatures(nn.Module):
-    def __init__(self, embedding_dim, hidden_dim, layer_dims=None):
-        super().__init__()
-        self.net = nn.Sequential()
+    def build_module(self, hidden_dim, layer_dims):
+        net = nn.Sequential()
         if layer_dims is None:
-            layer_dims = [embedding_dim, hidden_dim]
+            layer_dims = [hidden_dim, hidden_dim]
         else:
-            layer_dims = [embedding_dim] + layer_dims + [hidden_dim]
+            layer_dims = [hidden_dim] + layer_dims + [hidden_dim]
         
         for i in range(len(layer_dims)-1):
-            self.net.add_module(f"{i}", nn.Linear(layer_dims[i], layer_dims[i+1]))
+            net.add_module(f"{i}", nn.Linear(layer_dims[i], layer_dims[i+1]))
             if i != len(layer_dims)-2:
-                self.net.add_module(f"{i}_relu", nn.ReLU())
-        
-    def forward(self, state):
-        return self.net(state)
+                net.add_module(f"{i}_relu", nn.ReLU())
+        return net
+
 
 def dense_transition(
+    state_emb: Tensor,
     in_features: Tensor, 
     out_features: Tensor, 
     in_module: nn.Module, 
@@ -81,50 +85,67 @@ def dense_transition(
     state_belief: Tensor,
     ) -> Tuple[Tensor, None]:
     
+    out_features = torch.einsum('aij,si->asj', out_features, state_emb)
+    in_features = torch.einsum('aij,si->asj', in_features, state_emb)
+    
     out_features = out_module(out_features)
     in_features = in_module(in_features)
     
-    prior_beliefs = state_belief @ F.softmax((out_features @ in_features.T), dim=-1)
-    
-    return prior_beliefs, None
+    beliefs = F.softmax(torch.einsum('bsi,bti->bst', out_features, in_features), dim=-1)
+    beliefs = torch.einsum('ijk,ij->ik', beliefs, state_belief)
+    return beliefs, None
 
 def sparse_transition(
+    state_emb: Tensor,
     in_features: Tensor, 
-    out_features: Tensor,
+    out_features: Tensor, 
     in_module: nn.Module, 
     out_module: nn.Module, 
-    state_beliefs: Tensor, 
+    state_belief: Tensor, 
     state_bit_vecs: Tensor, 
     bitconverter: BitConverter, 
     dim: Optional[int] = -1,
+    k: Optional[int] = None,
+    batching: bool = True,
+    batching_size: int = 10000,
     ) -> Tuple[Tensor, Tensor]:
     
     # X_features have shape (num_states, hidden_dim)
-    # state_beliefs have shape (k, )
+    # state_beliefs have shape (1, k)
+    # state_bit_vecs have shape (k, num_variables)
     # output should be a tensor of shape (num_states, ) # or maybe (k, ) again after applying sparsemax_k??
-    idcs = bitconverter.bitvec_to_idx(state_bit_vecs)
-    selected_out_features = out_module(out_features[idcs])
-    in_features = in_module(in_features) 
     # in_features has shape (num_states, hidden_dim)
+    if k is None:
+        k = state_bit_vecs.shape[1]
     
-    prior_beliefs = state_beliefs @ F.softmax((selected_out_features @ in_features.T), dim=-1)
-    
-    # TODO support chunking this or something
-    # Okay this is a big problem right now. Posterior beliefs is a dist over the joint
-    # i.e. it is NOT factorized into a distribution over variables
-    # return sparsemax_k(prior_beliefs, k=len(state_idcs), dim=dim)
-    
-    # The solution: just apply topk to the joint
-    # TODO am I sure that the indices are the same as the indices I compute by hand?
-    values, indices = torch.topk(prior_beliefs, k=len(state_bit_vecs), dim=dim)
+    idcs = bitconverter.bitvec_to_idx(state_bit_vecs)
+
+    out_features = torch.einsum('aij,abi->abj', out_features, state_emb[idcs])
+    out_features = out_module(out_features)
+
+    in_features = torch.einsum('aij,si->asj', in_features, state_emb)
+    in_features = in_module(in_features)
+
+    if batching:
+        batch, num_states, emb_dim = in_features.shape
+        beliefs = []
+        for i in range(num_states // batching_size + 1):
+            beliefs.append(torch.einsum('abd, acd -> abc', out_features, in_features[:,i*batching_size:(i+1)*batching_size]))
+        beliefs = torch.cat(beliefs, dim=-1)
+        beliefs = F.softmax(beliefs, dim=-1)
+        beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
+    else:
+        beliefs = F.softmax(torch.einsum('abd,acd->abc', out_features, in_features), dim=-1)
+        beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
+
+    values, indices = torch.topk(beliefs.log(), k=k, dim=dim)
+
     out = sparsemax(values, dim=dim)
-    indices = indices.squeeze()
+
     state_bit_vecs = bitconverter.idx_to_bitvec(indices)
+
     return out, state_bit_vecs
-
-
-
-
+    
 # class ActionConditionedMLPTransition(nn.Module):
 #     def __init__(self, state_dim, num_actions, hidden_dim=128):
 #         super().__init__()
