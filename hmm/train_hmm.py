@@ -59,6 +59,7 @@ def main(
     vp_batchnorm,
     force_uniform_prior,
     prior_noise_scale,
+    obs_scale,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
@@ -95,6 +96,7 @@ def main(
         batch_size=batch_size,
         max_len=max_len,
         traj_max_len=traj_max_len,
+        scale=obs_scale,
     )
     
     
@@ -175,6 +177,7 @@ def main(
         vp_batchnorm=vp_batchnorm,
         force_uniform_prior=force_uniform_prior,
         prior_noise_scale=prior_noise_scale,
+        obs_scale=obs_scale,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
@@ -213,6 +216,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--test_only_dropout', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--max_datapoints', type=int, default=None)
+    parser.add_argument('--obs_scale', type=float, default=1.0)
     
     ## model args
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)

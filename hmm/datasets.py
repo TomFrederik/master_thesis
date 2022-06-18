@@ -100,14 +100,14 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
 
-def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, traj_max_len=20, **kwargs):
+def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, traj_max_len=20, scale=1.0, **kwargs):
     (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, traj_max_len, **kwargs)
     if kwargs['batch_size'] == 1:
-        train_data = SingleTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout)
-        val_data = SingleTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True)
+        train_data = SingleTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, scale=scale)
+        val_data = SingleTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, scale=scale)
     elif kwargs['batch_size'] > 1:
-        train_data = BatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'])
-        val_data = BatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'])
+        train_data = BatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
+        val_data = BatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
     else:
         raise ValueError(f'batch_size must be 1 or greater, but is {kwargs["batch_size"]}')
     return train_data, val_data
@@ -172,13 +172,14 @@ class TransitionData(Dataset):
         return Transition(state, actions, next_state, vp, dropped)
     
 class SingleTrajToyData(Dataset):
-    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop):
+    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, scale=1.0):
         self.obs = obs
         self.actions = actions
         self.sigma = sigma
         self.mu = mu
         self.drop = drop
         self.mvwrapper = mvwrapper
+        self.scale = scale
         
     def set_drop(self, drop: bool):
         self.drop = drop
@@ -199,6 +200,8 @@ class SingleTrajToyData(Dataset):
         else:
             obs = obs[:,None]
             dropped = np.zeros((obs.shape[0], 1))
+        
+        obs = scale_obs(obs, self.scale)
         
         player_pos = np.zeros_like(obs)
         player_pos[obs == 0] = 1
@@ -227,7 +230,7 @@ class SingleTrajToyData(Dataset):
         )
 
 class BatchTrajToyData(Dataset):
-    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, max_len):
+    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, max_len, scale=1):
         self.obs = obs
         self.actions = actions
         self.sigma = sigma
@@ -235,6 +238,7 @@ class BatchTrajToyData(Dataset):
         self.drop = drop
         self.mvwrapper = mvwrapper
         self.max_len = max_len
+        self.scale = scale
         
     def set_drop(self, drop: bool):
         self.drop = drop
@@ -270,6 +274,9 @@ class BatchTrajToyData(Dataset):
             obs = obs[:,None]
             dropped = np.zeros((obs.shape[0], 1))
         
+        # scale up
+        obs = scale_obs(obs, scale)
+        
         player_pos = np.zeros_like(obs)
         player_pos[obs == 0] = 1
         
@@ -291,3 +298,13 @@ class BatchTrajToyData(Dataset):
             dropped.astype(np.float32),
             player_pos.astype(np.float32),
         )
+        
+def scale_obs(obs, scale):
+    h, w = obs.shape[-2:]
+    new_h, new_w = int(h * scale), int(w * scale)
+    new_obs = np.zeros((*obs.shape[:-2], new_h, new_w))
+    # fill new obs appropriately
+    for i in range(new_h):
+        for j in range(new_w):
+            new_obs[..., i, j] = obs[..., int(i / scale), int(j / scale)]
+    return new_obs
