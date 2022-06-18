@@ -61,18 +61,16 @@ def kl_balancing_loss(
     kl = (balancing_coeff * discrete_kl(posterior.detach(), prior) + (1 - balancing_coeff) * discrete_kl(posterior, prior.detach()))
     return (nonterms * kl).mean()
 
-@torch.no_grad()
-def _no_grad_discrete_entropy(p):
-    out = torch.zeros_like(p)
-    out[p == 0] = 0
-    out[p != 0] = p[p != 0].log()
-    return -(out[p != 0] * p[p != 0]).sum(dim=-1).mean(dim=list(range(1, len(p.shape)-1)))
-
 def _grad_discrete_entropy(p):
     out = torch.zeros_like(p)
     out[p == 0] = 0
     out[p != 0] = p[p != 0].log()
-    return -(out[p != 0] * p[p != 0]).sum(dim=-1).mean(dim=list(range(1, len(p.shape)-1)))
+    out[p != 0] = out[p != 0] * p[p != 0]
+    return -out.sum(dim=-1).mean(dim=list(range(1, len(p.shape)-1)))
+
+@torch.no_grad()
+def _no_grad_discrete_entropy(p): 
+    return _grad_discrete_entropy(p)
 
 def discrete_entropy(p, grad=False):
     if grad:
