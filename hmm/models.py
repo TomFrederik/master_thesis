@@ -271,7 +271,7 @@ class DiscreteNet(nn.Module):
         # dropped has shape (batch, seq_len, num_views)
         recon_loss = 0
         if not self.disable_recon_loss:
-            recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=[2,3]) * nonterms).sum(dim=-1).mean()
+            recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).mean(dim=[2,3]) * nonterms).sum(dim=-1).mean()
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):
