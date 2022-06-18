@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Union, TypeVar
 
 import einops
 import einops.layers.torch as layers
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -435,7 +436,7 @@ class LightningNet(pl.LightningModule):
     
 
 class MLPDecoder(nn.Module):
-    def __init__(self, latent_dim, num_vars, output_channels, width=7) -> None:
+    def __init__(self, latent_dim, num_vars, output_channels, width=7, scale=1) -> None:
         super().__init__()
         
         self.net = nn.Sequential(
@@ -489,20 +490,43 @@ class ResNetBlock(nn.Module):
         return out
 
 
+### stolen from dreamer
+def conv_out(h_in, padding, kernel_size, stride):
+    return int((h_in + 2. * padding - (kernel_size - 1.) - 1.) / stride + 1.)
+
+def output_padding(h_in, conv_out, padding, kernel_size, stride):
+    return h_in - (conv_out - 1) * stride + 2 * padding - (kernel_size - 1) - 1
+
+def conv_out_shape(h_in, padding, kernel_size, stride):
+    return tuple(conv_out(x, padding, kernel_size, stride) for x in h_in)
+
 class Decoder(nn.Module):
 
-    def __init__(self, latent_dim=32, num_vars=32, output_channels=3):
+    def __init__(self, latent_dim=32, num_vars=32, output_channels=3, depth=16, scale=1):
         super().__init__()
         # dreamer
+        output_shape = (1, 7*scale, 7*scale)
+        c, h, w = output_shape
+
+        d = depth
+        k  = 3
+        conv1_shape = conv_out_shape(output_shape[1:], 0, k, 1)
+        conv2_shape = conv_out_shape(conv1_shape, 0, k, 1)
+        conv3_shape = conv_out_shape(conv2_shape, 0, k, 1)
+        self.conv_shape = (4*d, *conv3_shape)
+        self.output_shape = output_shape
+        
+        self.linear = nn.Linear(latent_dim*num_vars, np.prod(self.conv_shape).item())
+        
         self.net = nn.Sequential(
             layers.Rearrange('b n d -> b (n d)'),
-            nn.Linear(latent_dim*num_vars, 1024),
-            layers.Rearrange('b (d h w) -> b d h w', h=4, w=4),
-            nn.ConvTranspose2d(64, 32, (2,2), (1,1)),
+            self.linear,
+            layers.Rearrange('b (d h w) -> b d h w', d=self.conv_shape[0], h=self.conv_shape[1], w=self.conv_shape[2]),
+            nn.ConvTranspose2d(4*d, 2*d, k, 1),
             nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(32, 16, (2,2), (1,1)),
+            nn.ConvTranspose2d(2*d, d, k, 1),
             nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(16, output_channels, (2,2), (1,1)),
+            nn.ConvTranspose2d(d, output_channels, k, 1),
             # layers.Rearrange('b d h w -> b (d h w)'),
             # nn.Linear(16*49, output_channels*49),
             # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
@@ -584,6 +608,7 @@ class EmissionModel(nn.Module):
         num_variables: int,
         mlp: Optional[bool] = False,
         sparse: Optional[bool] = False,
+        scale: int = 1,
     ):
         super().__init__()
         self.num_input_channels = num_input_channels
@@ -593,9 +618,9 @@ class EmissionModel(nn.Module):
         self.sparse = sparse
         
         if mlp:
-            self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7) for _ in range(num_input_channels)])
+            self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7, scale=scale) for _ in range(num_input_channels)])
         else:
-            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1) for _ in range(num_input_channels)])
+            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale) for _ in range(num_input_channels)])
         self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
         
         nn.init.normal_(self.latent_embedding)

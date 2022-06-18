@@ -117,6 +117,7 @@ def main(
         num_variables=num_variables,
         mlp=mlp_repr,
         sparse=sparsemax,
+        scale=obs_scale,
     )
     
     num_values = 1
@@ -216,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--test_only_dropout', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--max_datapoints', type=int, default=None)
-    parser.add_argument('--obs_scale', type=float, default=1.0)
+    parser.add_argument('--obs_scale', type=int, default=1)
     
     ## model args
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)

@@ -127,12 +127,6 @@ class ExtrapolateCallback(pl.Callback):
             ent[state_belief_prior_sequence[:,i] == 0] = 0
             ent = ent.sum()
             print(f"{i}: prior entropy: {ent:.4f}")
-        # displ = state_belief_prior_sequence
-        # displ[displ < 0.5] = 0
-        # displ[displ > 0.5] = 1
-        # displ = displ.reshape(displ.shape[0], displ.shape[1], 7,7)
-        # print(displ)
-        # print(f"{state_idcs_prior_sequence = }")
         
         obs_hat = pl_module.emission.decode_only(state_belief_prior_sequence, state_bit_vec_sequence).to('cpu').float()[0]
         num_views = self.obs.shape[1]
