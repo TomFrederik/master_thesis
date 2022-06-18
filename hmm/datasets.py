@@ -210,8 +210,8 @@ class SingleTrajToyData(Dataset):
         action = self.actions[idx]
         action = np.append(action, np.zeros_like(action[-1]))
 
-        terms = np.zeros_like(action)
-        terms[-1] = 1
+        nonterms = np.ones_like(action)
+        nonterms[-1] = 0
         
 
         value_prefixes = np.zeros_like(action)
@@ -221,7 +221,7 @@ class SingleTrajToyData(Dataset):
             obs.astype(np.float32),
             action.astype(np.int64),
             value_prefixes.astype(np.float32),
-            terms.astype(np.int64), #terms
+            nonterms.astype(np.int64), #terms
             dropped.astype(np.float32),
             player_pos.astype(np.float32),
         )

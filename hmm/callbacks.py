@@ -40,8 +40,7 @@ class ReconstructionCallback(pl.Callback):
         posterior_belief_sequence = outputs['posterior_belief_sequence']
         posterior_bit_vec_sequence = outputs['posterior_bit_vec_sequence']
         
-        emission_input = einops.rearrange(posterior_belief_sequence, 'b t ... -> (b t) ...')
-        obs_hat = pl_module.emission.decode_only(emission_input, posterior_bit_vec_sequence).to('cpu').float()
+        obs_hat = pl_module.emission.decode_only(posterior_belief_sequence, posterior_bit_vec_sequence).to('cpu').float()[0]
         num_views = self.obs.shape[2]
         images = torch.stack(
             [(self.obs[0,:,i].to('cpu')*self.sigma)+self.mu for i in range(num_views)]\
@@ -121,7 +120,7 @@ class ExtrapolateCallback(pl.Callback):
         state_belief_prior_sequence, state_bit_vec_sequence = pl_module.network.k_step_extrapolation(self.posterior_0, self.state_idcs, self.actions, self.actions.shape[1])
         state_belief_prior_sequence = torch.cat([self.posterior_0[:,None], state_belief_prior_sequence], dim=1)
         if state_bit_vec_sequence is not None:
-            state_bit_vec_sequence = torch.cat([self.state_idcs[None], state_bit_vec_sequence], dim=1)[0]
+            state_bit_vec_sequence = torch.cat([self.state_idcs[None], state_bit_vec_sequence], dim=1)
         
         for i in range(1,state_belief_prior_sequence.shape[1]):
             ent = -(state_belief_prior_sequence[:,i] * state_belief_prior_sequence[:,i].log())
@@ -133,11 +132,9 @@ class ExtrapolateCallback(pl.Callback):
         # displ[displ > 0.5] = 1
         # displ = displ.reshape(displ.shape[0], displ.shape[1], 7,7)
         # print(displ)
-        # print(f"{state_belief_prior_sequence = }")
         # print(f"{state_idcs_prior_sequence = }")
         
-        emission_input = einops.rearrange(state_belief_prior_sequence, 'b t ... -> (b t) ...')
-        obs_hat = pl_module.emission.decode_only(emission_input, state_bit_vec_sequence).to('cpu').float()
+        obs_hat = pl_module.emission.decode_only(state_belief_prior_sequence, state_bit_vec_sequence).to('cpu').float()[0]
         num_views = self.obs.shape[1]
         images = torch.stack(
             [(self.obs[:,i].to('cpu')*self.sigma)+self.mu for i in range(num_views)]\

@@ -161,7 +161,7 @@ class DiscreteNet(nn.Module):
             value_prefix_loss = self.compute_vp_loss(value_prefix_pred, target_value_prefixes) # TODO if we use longer rollout need to adapt this
         else:
             value_prefix_loss = 0
-            
+        
         print(value_prefix_pred)
         print(target_value_prefixes)
 
@@ -250,9 +250,13 @@ class DiscreteNet(nn.Module):
         # for i in range(len(posterior_belief_sequence)):
         #     print(f"{i = } : top-5 = {torch.argsort(posterior_belief_sequence[i][0])[-5:].detach().cpu().numpy()}, ent = {discrete_entropy(posterior_belief_sequence[i]):.3f}")
         
-        
+        # stack along time dimension
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)
         posterior_belief_sequence = torch.stack(posterior_belief_sequence, dim=1)
+        if posterior_bit_vecs_sequence[-1] is not None:
+            posterior_bit_vecs_sequence = torch.stack(posterior_bit_vecs_sequence, dim=1)
+        else:
+            posterior_bit_vecs_sequence = None
         if not self.disable_vp:
             value_prefix_pred = torch.stack(value_prefix_pred, dim=1)
         else:
@@ -608,8 +612,8 @@ class EmissionModel(nn.Module):
         if self.sparse:
             if state_bit_vecs is None:
                 raise ValueError('state_bit_vecs must be provided for sparse model')
-            emission_means = self.get_emission_means_sparse(state_bit_vecs)
-            obs_logits = self.compute_obs_logits_sparse(x, emission_means)
+            emission_means = self.get_emission_means_sparse(state_bit_vecs[:,None])
+            obs_logits = self.compute_obs_logits_sparse(x, emission_means[:,0])
         else:
             # assuming a diagonal gaussian with unit variance
             emission_means = self.get_emission_means()
@@ -621,11 +625,11 @@ class EmissionModel(nn.Module):
         state_bit_vecs: Tensor, 
     ) -> Tensor:
         states = F.one_hot(state_bit_vecs, num_classes=2).float()
-        embeds = torch.einsum("bktc,tce->bkte", states, self.latent_embedding)
-        batch, k, *_ = embeds.shape
-        embeds = einops.rearrange(embeds, 'batch k vars dim -> (batch k) vars dim')
+        embeds = torch.einsum("btkdc,dce->btkde", states, self.latent_embedding)
+        batch, time, k, *_ = embeds.shape
+        embeds = einops.rearrange(embeds, 'batch time k vars dim -> (batch time k) vars dim')
         emission_probs = torch.stack([decoder(embeds)[:,0] for decoder in self.decoders], dim=1)
-        emission_probs = einops.rearrange(emission_probs, '(batch k) views h w -> batch k views h w', batch=batch, k=k)
+        emission_probs = einops.rearrange(emission_probs, '(batch time k) views h w -> batch time k views h w', batch=batch, k=k, time=time)
         return emission_probs
 
     def get_emission_means(self):
@@ -667,11 +671,10 @@ class EmissionModel(nn.Module):
         # compute expected value
         if self.sparse:
             emission_means = self.get_emission_means_sparse(bit_vecs)
-            mean_prediction = (latent_dist[...,None,None,None] * emission_means).sum(dim=1)
+            mean_prediction = (latent_dist[...,None,None,None] * emission_means).sum(dim=2)
         else:
             emission_means = self.get_emission_means()
-            emission_means = einops.rearrange(emission_means, '... num_views h w -> (...) num_views h w')
-            mean_prediction = (latent_dist[...,None,None,None] * emission_means[None]).sum(dim=1)
+            mean_prediction = (latent_dist[...,None,None,None] * emission_means[None]).sum(dim=2)
                 
 
         return mean_prediction
