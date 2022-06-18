@@ -405,7 +405,8 @@ class LightningNet(pl.LightningModule):
         self.log(f"Training/total_loss", total_loss)
         self.log(f"Training/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
         self.log(f"Training/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
-        
+        if torch.isnan(total_loss).any():
+            raise ValueError("Total loss is NaN!")
         return total_loss
     
     def validation_step(self, batch, batch_idx):
