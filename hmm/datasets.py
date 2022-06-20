@@ -275,7 +275,7 @@ class BatchTrajToyData(Dataset):
             dropped = np.zeros((obs.shape[0], 1))
         
         # scale up
-        obs = scale_obs(obs, scale)
+        obs = scale_obs(obs, self.scale)
         
         player_pos = np.zeros_like(obs)
         player_pos[obs == 0] = 1
