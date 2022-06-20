@@ -502,14 +502,22 @@ def conv_out_shape(h_in, padding, kernel_size, stride):
 
 class Decoder(nn.Module):
 
-    def __init__(self, latent_dim=32, num_vars=32, output_channels=3, depth=16, scale=1):
+    def __init__(
+        self, 
+        latent_dim: int = 32, 
+        num_vars: int = 32, 
+        output_channels: int = 3, 
+        depth: int = 16, 
+        scale: int = 1, 
+        kernel_size: int = 3
+    ) -> None:
         super().__init__()
         # dreamer
         output_shape = (1, 7*scale, 7*scale)
         c, h, w = output_shape
 
         d = depth
-        k  = 3
+        k  = kernel_size
         conv1_shape = conv_out_shape(output_shape[1:], 0, k, 1)
         conv2_shape = conv_out_shape(conv1_shape, 0, k, 1)
         conv3_shape = conv_out_shape(conv2_shape, 0, k, 1)
@@ -609,6 +617,7 @@ class EmissionModel(nn.Module):
         mlp: Optional[bool] = False,
         sparse: Optional[bool] = False,
         scale: int = 1,
+        kernel_size: int = 3,
     ):
         super().__init__()
         self.num_input_channels = num_input_channels
@@ -616,11 +625,12 @@ class EmissionModel(nn.Module):
         self.codebook_size = codebook_size
         self.num_variables = num_variables
         self.sparse = sparse
+        self.kernel_size = kernel_size
         
         if mlp:
             self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7, scale=scale) for _ in range(num_input_channels)])
         else:
-            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale) for _ in range(num_input_channels)])
+            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale, kernel_size=kernel_size) for _ in range(num_input_channels)])
         self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
         
         nn.init.normal_(self.latent_embedding)
