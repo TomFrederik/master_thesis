@@ -60,6 +60,7 @@ def main(
     force_uniform_prior,
     prior_noise_scale,
     obs_scale,
+    kernel_size,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
@@ -118,6 +119,7 @@ def main(
         mlp=mlp_repr,
         sparse=sparsemax,
         scale=obs_scale,
+        kernel_size=kernel_size,
     )
     
     num_values = 1
@@ -179,6 +181,7 @@ def main(
         force_uniform_prior=force_uniform_prior,
         prior_noise_scale=prior_noise_scale,
         obs_scale=obs_scale,
+        kernel_size=kernel_size,
     )
     wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
     logger = WandbLogger(**wandb_kwargs)
@@ -236,6 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--vp_batchnorm', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--force_uniform_prior', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--prior_noise_scale', type=float, default=0.0)
+    parser.add_argument('--kernel_size', type=int, default=3, help="Size of the conv kernel")
     
     # training args
     parser.add_argument('--learning_rate', type=float, default=0.0002)
