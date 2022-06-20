@@ -618,6 +618,7 @@ class EmissionModel(nn.Module):
         sparse: Optional[bool] = False,
         scale: int = 1,
         kernel_size: int = 3,
+        depth: int = 16,
     ):
         super().__init__()
         self.num_input_channels = num_input_channels
@@ -630,7 +631,7 @@ class EmissionModel(nn.Module):
         if mlp:
             self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7, scale=scale) for _ in range(num_input_channels)])
         else:
-            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale, kernel_size=kernel_size) for _ in range(num_input_channels)])
+            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale, kernel_size=kernel_size, depth=depth) for _ in range(num_input_channels)])
         self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
         
         nn.init.normal_(self.latent_embedding)
@@ -674,12 +675,12 @@ class EmissionModel(nn.Module):
         
     def compute_obs_logits_sparse(self, x, emission_means):
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means - x[:,None]) ** 2).mean(dim=[-2,-1]) / 2
+        output = - ((emission_means - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
         return output
     
     def compute_obs_logits(self, x, emission_means):
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means[None] - x[:,None]) ** 2).mean(dim=[-2,-1]) / 2
+        output = - ((emission_means[None] - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
         return output
 
     
