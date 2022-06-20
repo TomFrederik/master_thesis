@@ -123,7 +123,7 @@ def main(
     )
     
     num_values = 1
-    mlp_hidden_dims = [512, 512, 256, 128]
+    mlp_hidden_dims = [128, 128]
     vp_kwargs = dict(
         num_values=num_values,
         mlp_hidden_dims=mlp_hidden_dims,
