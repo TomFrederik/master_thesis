@@ -55,7 +55,6 @@ def main(
     disable_vp,
     action_layer_dims,
     max_len,
-    traj_max_len,
     vp_batchnorm,
     force_uniform_prior,
     prior_noise_scale,
@@ -97,7 +96,6 @@ def main(
         train_val_split=0.9,
         batch_size=batch_size,
         max_len=max_len,
-        traj_max_len=traj_max_len,
         scale=obs_scale,
     )
     
@@ -186,8 +184,7 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
-    wandb_kwargs = dict(project="MT-ToyTask-Ours", config=wandb_config)
-    logger = WandbLogger(**wandb_kwargs)
+    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config)
     
     # callbacks
     callbacks = []
@@ -256,7 +253,6 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--detect_anomaly', action='store_true')
     parser.add_argument('--track_grad_norm', type=int, default=-1)
-    parser.add_argument('--traj_max_len', type=int, default=20, help='Max length of an episode. Longer episodes will be discarded')
     parser.add_argument('--max_len', type=int, default=10, help='Max length of an episode for batching purposes. Rest will be padded.')
     
     args = parser.parse_args()
