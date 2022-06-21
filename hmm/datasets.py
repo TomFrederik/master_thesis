@@ -186,11 +186,12 @@ class BatchTrajToyData(Dataset):
         
         if self.max_len == -1:
             max_len = traj_length
+            start_idx = 0
         else:
             max_len = self.max_len
+            start_idx = np.random.choice(traj_length)   
         
         
-        start_idx = np.random.choice(traj_length)
         pad_length = max(0, max_len + start_idx - traj_length)
         
         # retrieve and pad actions
