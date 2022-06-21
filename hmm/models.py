@@ -1,42 +1,20 @@
-import itertools
 import logging
-from time import time
-from typing import List, Optional, Tuple, Union, TypeVar
+from typing import Tuple, Union
 
-import einops
-import einops.layers.torch as layers
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from commons import Tensor
-from sparsemax_k import sparsemax_k, BitConverter
+from emission import EmissionModel
+from sparsemax_k import BitConverter, sparsemax_k
 from state_prior import StatePrior
 from transition_models import FactorizedTransition
-from utils import discrete_entropy, generate_all_combinations, kl_balancing_loss
+from utils import discrete_entropy, kl_balancing_loss
 from value_prefix import DenseValuePrefixPredictor, SparseValuePrefixPredictor
-from torch.distributions import OneHotCategorical, Categorical
-
-def sum_factored_logits(logits):
-    """
-    Sum logits that are factored into shape (*, num_variables, codebook_size).
-    """
-    num_vars = logits.shape[-2]
-    codebook_size = logits.shape[-1]
-    out = torch.empty((*logits.shape[:-2], codebook_size ** num_vars), device=logits.device)
-    for i, idcs in enumerate(itertools.product(range(codebook_size), repeat=num_vars)):
-        out[..., i] = logits[..., torch.arange(len(idcs)), idcs].sum(dim=-1)
-    return out
 
 
-# predicts the value prefix
-# takes in sequence (s_t, hat_s_t+1, ..., hat_s_t+k-1)
-# and predicts the k step value prefix for each
-
-
-# combine everythin
 class DiscreteNet(nn.Module):
     def __init__(
         self,
@@ -113,11 +91,12 @@ class DiscreteNet(nn.Module):
             
             # get vp means for each state
             # value_prefix_means = self.value_prefix_predictor()[:,0] # has shape (num_states, )
-
+        else:
+            target_value_prefixes = None
+            
         # prior
         state_belief = self.state_prior(batch_size)
         if self.sparsemax:
-            #TODO add batch support
             state_belief, state_bit_vecs = sparsemax_k(state_belief, self.sparsemax_k) 
         else:
             state_logits = F.log_softmax(state_belief, dim=-1)
@@ -191,7 +170,6 @@ class DiscreteNet(nn.Module):
         dropped, 
         state_belief, 
         state_bit_vecs, 
-        # value_prefix_means, 
         obs_sequence,
         nonterms,
         player_pos,
@@ -223,8 +201,6 @@ class DiscreteNet(nn.Module):
 
             # get the posterior for the next state
             state_belief_posterior, obs_logits = self.compute_posterior(prior, state_bit_vecs, obs_sequence[:,t], dropped[:,t])
-            # print(torch.sort(state_belief_posterior, dim=-1)[0][:,-10:])
-            # print(torch.sort(state_belief_posterior, dim=-1)[1][:,-10:])
             
             # compute the dynamics loss
             dyn_loss = dyn_loss + kl_balancing_loss(self.kl_balancing_coeff, prior, state_belief_posterior, nonterms[:,t])
@@ -239,6 +215,7 @@ class DiscreteNet(nn.Module):
             else:
                 prior_entropies.append(torch.zeros_like(prior_entropies[-1]))
                 posterior_entropies.append(torch.zeros_like(posterior_entropies[-1]))
+        
         # predict value prefixes
         if self.sparsemax:
             vp_input = posterior_bit_vecs_sequence[-1].float()
@@ -246,10 +223,6 @@ class DiscreteNet(nn.Module):
         else:
             vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
             value_prefix_pred.append(self.value_prefix_predictor(vp_input))
-                    
-        
-        # for i in range(len(posterior_belief_sequence)):
-        #     print(f"{i = } : top-5 = {torch.argsort(posterior_belief_sequence[i][0])[-5:].detach().cpu().numpy()}, ent = {discrete_entropy(posterior_belief_sequence[i]):.3f}")
         
         # stack along time dimension
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)
@@ -284,12 +257,10 @@ class DiscreteNet(nn.Module):
         state_bit_vec_sequence = []
         for t in range(min(action_sequence.shape[1], k)):
             state_belief, state_bit_vec = self.transition(state_belief, action_sequence[:, t], state_bit_vec)
-            # print('state_belief in k-step extrapolation: ', state_belief)
             state_belief = state_belief / state_belief.sum(dim=-1, keepdim=True)
             state_belief_prior_sequence.append(state_belief)
             state_bit_vec_sequence.append(state_bit_vec)
-        # print(state_belief_prior_sequence)
-        # print(state_idcs_prior_sequence)
+
         if state_bit_vec_sequence[-1] is not None:
             state_bit_vec_sequence = torch.stack(state_bit_vec_sequence, dim=1)
         else:
@@ -354,9 +325,9 @@ class LightningNet(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
-        #TODO factorize num_variables etc. to be top-level parameters
         if force_uniform_prior and prior_noise_scale == 0 and sparsemax:
             logging.warning("Using sparsemax + uniform prior + prior_noise_scale 0 is probably not going to work!.")
+        #TODO factorize num_variables etc. to be top-level parameters
         self.prior = StatePrior(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], device, force_uniform_prior, prior_noise_scale)
         self.transition = FactorizedTransition(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], num_actions, layer_dims=action_layer_dims, sparse=sparsemax)
         
@@ -369,13 +340,9 @@ class LightningNet(pl.LightningModule):
                 self.value_prefix_predictor = SparseValuePrefixPredictor(emission_kwargs['num_variables'], **vp_kwargs)
             else:
                 self.value_prefix_predictor = DenseValuePrefixPredictor(state_size, **vp_kwargs)
-            # self.value_prefix_predictor = NewValuePrefixPredictor(49, **vp_kwargs)
-            # self.value_prefix_predictor = ValuePrefixPredictor(emission_kwargs['num_variables'], emission_kwargs['codebook_size'], emission_kwargs['embedding_dim'], **vp_kwargs)
         else:
             self.value_prefix_predictor = None
         
-        # print(self.value_prefix_predictor)
-        # raise ValueError
         
         self.emission = EmissionModel(**emission_kwargs) #TODO
         self.network = DiscreteNet(
@@ -435,292 +402,5 @@ class LightningNet(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.network.parameters(), lr=self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)
         return optimizer
-    
-
-class MLPDecoder(nn.Module):
-    def __init__(self, latent_dim, num_vars, output_channels, width=7, scale=1) -> None:
-        super().__init__()
-        
-        self.net = nn.Sequential(
-            layers.Rearrange('b n d -> b (n d)'),
-            nn.Linear(latent_dim*num_vars, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_channels * (width ** 2)),
-            layers.Rearrange('b (c h w) -> b c h w', c=output_channels, h=width, w=width),
-        )
-    
-    def forward(self, x):
-        return self.net(x)
-
-    def set_bn_eval(self, m):
-        if isinstance(m, nn.modules.batchnorm._BatchNorm):
-            m.eval()
-
-    def set_bn_train(self, m):
-        if isinstance(m, nn.modules.batchnorm._BatchNorm):
-            m.train()
-            
-            
-class ResNetBlock(nn.Module):
-
-    def __init__(self, num_in_channels, num_hidden_channels, shape, stride=1):
-        super().__init__()
-        self.ln1 = nn.LayerNorm([num_in_channels, *shape])
-        self.relu = nn.ReLU(inplace=True)
-        self.conv1 = nn.Conv2d(num_in_channels, num_hidden_channels, 3, stride, padding=1)
-        
-        self.ln2 = nn.LayerNorm([num_hidden_channels, *shape])
-        self.conv2 = nn.Conv2d(num_hidden_channels, num_in_channels, 3, stride, padding=1)
-        
-        self.stride = stride
-
-    def forward(self, x):
-        residual = x
-
-        out = self.ln1(x)
-        out = self.relu(out)
-        out = self.conv1(out)
-
-        out = self.ln2(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-
-        out += residual
-
-        return out
-
-
-### stolen from dreamer
-def conv_out(h_in, padding, kernel_size, stride):
-    return int((h_in + 2. * padding - (kernel_size - 1.) - 1.) / stride + 1.)
-
-def output_padding(h_in, conv_out, padding, kernel_size, stride):
-    return h_in - (conv_out - 1) * stride + 2 * padding - (kernel_size - 1) - 1
-
-def conv_out_shape(h_in, padding, kernel_size, stride):
-    return tuple(conv_out(x, padding, kernel_size, stride) for x in h_in)
-
-class Decoder(nn.Module):
-
-    def __init__(
-        self, 
-        latent_dim: int = 32, 
-        num_vars: int = 32, 
-        output_channels: int = 3, 
-        depth: int = 16, 
-        scale: int = 1, 
-        kernel_size: int = 3
-    ) -> None:
-        super().__init__()
-        # dreamer
-        output_shape = (1, 7*scale, 7*scale)
-        c, h, w = output_shape
-
-        d = depth
-        k  = kernel_size
-        conv1_shape = conv_out_shape(output_shape[1:], 0, k, 1)
-        conv2_shape = conv_out_shape(conv1_shape, 0, k, 1)
-        conv3_shape = conv_out_shape(conv2_shape, 0, k, 1)
-        self.conv_shape = (4*d, *conv3_shape)
-        self.output_shape = output_shape
-        
-        self.linear = nn.Linear(latent_dim*num_vars, np.prod(self.conv_shape).item())
-        
-        self.net = nn.Sequential(
-            layers.Rearrange('b n d -> b (n d)'),
-            self.linear,
-            layers.Rearrange('b (d h w) -> b d h w', d=self.conv_shape[0], h=self.conv_shape[1], w=self.conv_shape[2]),
-            nn.ConvTranspose2d(4*d, 2*d, k, 1),
-            nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(2*d, d, k, 1),
-            nn.ELU(alpha=1.0),
-            nn.ConvTranspose2d(d, output_channels, k, 1),
-            # layers.Rearrange('b d h w -> b (d h w)'),
-            # nn.Linear(16*49, output_channels*49),
-            # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
-        )
-        
-        # test
-        # self.net = nn.Sequential(
-        #     layers.Rearrange('b n d -> b (n d)'),
-        #     nn.Linear(latent_dim*num_vars, 3*3*128),
-        #     layers.Rearrange('b (d h w) -> b d h w', h=3, w=3),
-        #     nn.ConvTranspose2d(128, 64, (3,3), (1,1)),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(64, 32, (3,3), (1,1)),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(32, 1, (3,3), (1,1)),
-        #     # layers.Rearrange('b d h w -> b (d h w)'),
-        #     # nn.Linear(16*49, output_channels*49),
-        #     # layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
-        # )
-        
-        
-        # # ResNet
-        # self.net = nn.Sequential(
-        #     layers.Rearrange('b n d -> b (n d)'),
-        #     nn.Linear(latent_dim*num_vars, 4*4*16),
-        #     layers.Rearrange('b (c h w) -> b c h w', c=16, h=4, w=4),
-        #     ResNetBlock(16, 64, shape=(4,4)),
-        #     nn.ConvTranspose2d(16, 64, (2,2), (1,1)),
-        #     nn.ReLU(),
-        #     ResNetBlock(64, 64, shape=(5,5)),
-        #     nn.ConvTranspose2d(64, 16, (2,2), (1,1)),
-        #     nn.ReLU(),
-        #     ResNetBlock(16, 16, shape=(6,6)),
-        #     nn.ConvTranspose2d(16, 16, (2,2), (1,1)),
-        #     nn.ReLU(),
-        #     layers.Rearrange('b d h w -> b (d h w)'),
-        #     nn.Linear(16*49, output_channels*49),
-        #     layers.Rearrange('b (d h w) -> b d h w', h=7, w=7),
-        # )
-
-        # ours
-        # self.net = nn.Sequential(
-        #     layers.Rearrange('b n d -> b (n d)'),
-        #     nn.Linear(latent_dim*num_vars, 2048),
-        #     layers.Rearrange('b (d h w) -> b d h w', h=4, w=4),
-        #     nn.ConvTranspose2d(128, 64, (2,2), (1,1)),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(64, 32, (2,2), (1,1)),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(32, output_channels, (2,2), (1,1)),
-        # )
-        
-        # init
-        # torch.nn.init.kaiming_uniform_(self.net[3].weight, mode='fan_out')
-        # torch.nn.init.kaiming_uniform_(self.net[5].weight, mode='fan_out')
-        
-        
-    def forward(self, x):        
-        out = self.net(x)
-        return out
-        
-
-    def set_bn_eval(self, m):
-        if isinstance(m, nn.modules.batchnorm._BatchNorm):
-            m.eval()
-
-
-    def set_bn_train(self, m):
-        if isinstance(m, nn.modules.batchnorm._BatchNorm):
-            m.train()
-
-class EmissionModel(nn.Module):
-
-    def __init__(
-        self, 
-        num_input_channels: int,
-        embedding_dim: int,
-        codebook_size: int,
-        num_variables: int,
-        mlp: Optional[bool] = False,
-        sparse: Optional[bool] = False,
-        scale: int = 1,
-        kernel_size: int = 3,
-        depth: int = 16,
-    ):
-        super().__init__()
-        self.num_input_channels = num_input_channels
-        self.embedding_dim = embedding_dim
-        self.codebook_size = codebook_size
-        self.num_variables = num_variables
-        self.sparse = sparse
-        self.kernel_size = kernel_size
-        
-        if mlp:
-            self.decoders = nn.ModuleList([MLPDecoder(embedding_dim, num_variables, output_channels=1, width=7, scale=scale) for _ in range(num_input_channels)])
-        else:
-            self.decoders = nn.ModuleList([Decoder(embedding_dim, num_variables, output_channels=1, scale=scale, kernel_size=kernel_size, depth=depth) for _ in range(num_input_channels)])
-        self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
-        
-        nn.init.normal_(self.latent_embedding)
-        
-        print(self)
-        if not sparse:
-            self.all_idcs = generate_all_combinations(codebook_size, num_variables)
-
-    def forward(
-        self, 
-        x, 
-        state_bit_vecs: Optional[Tensor] = None
-    ) -> Tensor:
-        if self.sparse:
-            if state_bit_vecs is None:
-                raise ValueError('state_bit_vecs must be provided for sparse model')
-            emission_means = self.get_emission_means_sparse(state_bit_vecs[:,None])
-            obs_logits = self.compute_obs_logits_sparse(x, emission_means[:,0])
-        else:
-            # assuming a diagonal gaussian with unit variance
-            emission_means = self.get_emission_means()
-            obs_logits = self.compute_obs_logits(x, emission_means)
-        return obs_logits
-
-    def get_emission_means_sparse(
-        self, 
-        state_bit_vecs: Tensor, 
-    ) -> Tensor:
-        states = F.one_hot(state_bit_vecs, num_classes=2).float()
-        embeds = torch.einsum("btkdc,dce->btkde", states, self.latent_embedding)
-        batch, time, k, *_ = embeds.shape
-        embeds = einops.rearrange(embeds, 'batch time k vars dim -> (batch time k) vars dim')
-        emission_probs = torch.stack([decoder(embeds)[:,0] for decoder in self.decoders], dim=1)
-        emission_probs = einops.rearrange(emission_probs, '(batch time k) views h w -> batch time k views h w', batch=batch, k=k, time=time)
-        return emission_probs
-
-    def get_emission_means(self):
-        z = self.latent_embedding[torch.arange(self.num_variables),self.all_idcs,:]
-        emission_probs = torch.stack([decoder(z)[:,0] for decoder in self.decoders], dim=1)
-        return emission_probs
-        
-    def compute_obs_logits_sparse(self, x, emission_means):
-        #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
-        return output
-    
-    def compute_obs_logits(self, x, emission_means):
-        #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means[None] - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
-        return output
-
-    
-    ## hardcoded for numvars = 1, codebooksize 49
-    # def compute_obs_logits(self, x, emission_means):
-    #     #TODO separate channels and views rather than treating them interchangably?
-    #     output = einops.rearrange(torch.zeros_like(x), '... views h w -> ... views (h w)') - 10 ** 10
-    #     output[torch.arange(len(x)),...,torch.argmin(einops.rearrange(x, '... views h w -> ... (views h w)'), dim=-1)] = 0
-    #     return output
-    
-    
-    @torch.no_grad()
-    def decode_only(self, latent_dist, bit_vecs=None):
-        """
-
-        :param latent_dist: shape (batch_size, codebook_size ** num_vars)
-        :type latent_dist: torch.Tensor
-        :return: x_hat: decoded z
-        :rtype: torch.Tensor
-        """
-        mean_prediction = None
-
-        # TODO make this more efficient using batching
-        # compute expected value
-        if self.sparse:
-            emission_means = self.get_emission_means_sparse(bit_vecs)
-            mean_prediction = (latent_dist[...,None,None,None] * emission_means).sum(dim=2)
-        else:
-            emission_means = self.get_emission_means()
-            mean_prediction = (latent_dist[...,None,None,None] * emission_means[None]).sum(dim=2)
-                
-
-        return mean_prediction
-
-    @property
-    def device(self):
-        return next(self.parameters()).device
-    
-
 
     

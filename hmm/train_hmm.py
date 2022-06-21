@@ -40,10 +40,10 @@ def main(
     batch_size,
     num_epochs,
     num_workers,
+    vp_layer_dims,
     accumulate_grad_batches,
     # entropy_scale,
     gradient_clip_val,
-    mlp_repr,
     seed,
     detect_anomaly,
     test_only_dropout,
@@ -60,6 +60,7 @@ def main(
     prior_noise_scale,
     obs_scale,
     kernel_size,
+    num_actions,
     depth,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
@@ -67,15 +68,14 @@ def main(
     test_only_dropout = test_only_dropout == 'yes'
     disable_vp = disable_vp == 'yes'
     disable_recon_loss = disable_recon_loss == 'yes'
-    mlp_repr = mlp_repr == 'yes'
     vp_batchnorm = vp_batchnorm == 'yes'
     force_uniform_prior = force_uniform_prior == 'yes'
     
     if codebook_size != 2:
         raise NotImplementedError("Codebook size other than 2 is not supported")
-
         
     percentages = [percentage] * num_views
+    num_input_channels = len(percentages)
     
     pl.seed_everything(seed)
     
@@ -99,23 +99,17 @@ def main(
         scale=obs_scale,
     )
     
-    
     train_data, val_data = construct_train_val_data(data_path, **data_kwargs)
             
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)#, collate_fn=TransitionData.collate_fn)
-    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)#, collate_fn=TransitionData.collate_fn)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
-    # settings for toy env
-    num_actions = 4
-    num_input_channels = len(percentages)
-
     # emission settings    
     emission_kwargs = dict(
         num_input_channels=num_input_channels,
         codebook_size=codebook_size,
         embedding_dim=embedding_dim,
         num_variables=num_variables,
-        mlp=mlp_repr,
         sparse=sparsemax,
         scale=obs_scale,
         kernel_size=kernel_size,
@@ -123,10 +117,9 @@ def main(
     )
     
     num_values = 1
-    mlp_hidden_dims = [128, 128]
     vp_kwargs = dict(
         num_values=num_values,
-        mlp_hidden_dims=mlp_hidden_dims,
+        mlp_hidden_dims=vp_layer_dims,
         vp_batchnorm=vp_batchnorm,
     )
     
@@ -164,7 +157,6 @@ def main(
         learning_rate=learning_rate,
         weight_decay=weight_decay,
         gradient_clip_val=gradient_clip_val,
-        mlp_repr=mlp_repr,
         num_views=num_views,
         percentages=percentages,
         dropout=dropout,
@@ -221,6 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_only_dropout', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--max_datapoints', type=int, default=None)
     parser.add_argument('--obs_scale', type=int, default=1)
+    parser.add_argument('--num_actions', type=int, default=4)
     
     ## model args
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)
@@ -230,12 +223,12 @@ if __name__ == '__main__':
     parser.add_argument('--num_variables', type=int, default=10)
     parser.add_argument('--codebook_size', type=int, default=2)
     parser.add_argument('--embedding_dim', type=int, default=128)
-    parser.add_argument('--mlp_repr', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--disable_recon_loss', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--sparsemax', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--disable_vp', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--sparsemax_k', type=int, default=30)
     parser.add_argument('--action_layer_dims', type=int, nargs='*', default=None)
+    parser.add_argument('--vp_layer_dims', type=int, nargs='*', default=None)
     parser.add_argument('--vp_batchnorm', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--force_uniform_prior', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--prior_noise_scale', type=float, default=0.0)
