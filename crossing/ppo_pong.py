@@ -1,20 +1,26 @@
 import os
 from typing import Optional
+import argparse
 
 import einops
-from einops.layers.torch import Rearrange
 import gym
-from gym_minigrid.wrappers import FullyObsWrapper
+import numpy as np
 import stable_baselines3 as sb3
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch
 import torch.nn as nn
-import wandb
-from wandb.integration.sb3 import WandbCallback
+from einops.layers.torch import Rearrange
+from gym_minigrid.wrappers import FullyObsWrapper
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env.base_vec_env import VecEnvWrapper
-import numpy as np
-from torchvision.transforms import Resize, Grayscale
+from torchvision.transforms import Grayscale, Resize
+from wandb.integration.sb3 import WandbCallback
+
+import wandb
+
 
 def conv_out(h_in, padding, kernel_size, stride):
     return int((h_in + 2. * padding - (kernel_size - 1.) - 1.) / stride + 1.)
@@ -29,7 +35,6 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
     def __init__(
         self, 
         observation_space: gym.spaces.Box, 
-        embedding_dim: Optional[int] = 32, 
         feature_dim: Optional[int] = 32,
         num_channels: Optional[int] = 32,
     ):
@@ -37,6 +42,9 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, feature_dim)
 
         input_shape = observation_space.shape
+        
+        # input_shape = (observation_space.shape[-1], observation_space.shape[0], observation_space.shape[1])
+        print(f"input_shape: {input_shape}")
 
         d = num_channels
         k = 3
@@ -47,7 +55,7 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
         conv4_shape = conv_out_shape(conv3_shape, 0, k, stride)
         self.conv_shape = (d, *conv4_shape)
         print(f"{self.conv_shape = }")
-
+        
         self.image_conv = nn.Sequential(
             nn.Conv2d(input_shape[0], 8*d, k, stride),
             nn.ReLU(),
@@ -69,7 +77,6 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
 
 class CropGrayWrapper(VecEnvWrapper):
     def __init__(self, venv: VecEnvWrapper):
-        super().__init__(venv)
         self.venv = venv
         self.trafo_list = [
             lambda x: x[:, :,35:-25],
@@ -78,6 +85,7 @@ class CropGrayWrapper(VecEnvWrapper):
             Grayscale(),
         ]
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(1, 84, 84), dtype=np.float32)
+        super().__init__(venv, observation_space=self.observation_space)
         
     def trafos(self, x):
         for trafo in self.trafo_list:
@@ -86,7 +94,7 @@ class CropGrayWrapper(VecEnvWrapper):
         
     def observation(self, observation):
         observation = torch.from_numpy(einops.rearrange(observation, 'b h w c -> b c h w')).float()
-        observation = self.trafos(observation).numpy()
+        observation = self.trafos(observation).numpy() # extract channel
         return observation
     
     def reset(self):
@@ -96,69 +104,92 @@ class CropGrayWrapper(VecEnvWrapper):
         out = self.venv.step_wait()
         return (self.observation(out[0]), *out[1:])
 
-config = {
-    "constant_env":False,
-    "policy_type": "MlpPolicy",
-    "total_timesteps": 500000,
-    "env_name": "Pong-v0",
-    "policy_kwargs": dict(
-        features_extractor_class=ConvFeatureExtractor,
-    ),
-    "batch_size": 256,
-    "vf_coef": 0.5,
-    "ent_coef": 0.01,
-    "embedding_dim": 64,
-    "num_channels": 16,
-    'feature_dim': 128,
-    "network_dim": 512,
-    'n_epochs':4,
-    'learning_rate':0.0001,
-}
+def make_env(env_id, rank, seed=0, frame_skip=4):
+        """
+        Utility function for multiprocessed env.
 
+        :param env_id: (str) the environment ID
+        :param seed: (int) the inital seed for RNG
+        :param rank: (int) index of the subprocess
+        """
+        def _init():
+            env = gym.make(env_id)
+            env.seed(seed + rank)
+            return AtariWrapper(env, frame_skip=frame_skip)
+        set_random_seed(seed)
+        return _init
 
+if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--frame_skip', type=int, default=4)
+    parser.add_argument('--n_stack', type=int, default=4)
+    parser.add_argument('--eval_freq', type=int, default=10_000)
+    parser.add_argument('--num_envs', type=int, default=1)
+    kwargs = vars(parser.parse_args())
+    
+    
+    config = {
+        "policy_type": "MlpPolicy",
+        "total_timesteps": 5_000_000,
+        "env_name": "Pong-v0",
+        "policy_kwargs": dict(
+            features_extractor_class=ConvFeatureExtractor,
+        ),
+        "batch_size": 256,
+        "vf_coef": 0.5,
+        "ent_coef": 0.01,
+        "num_channels": 16,
+        'feature_dim': 128,
+        "network_dim": 512,
+        'n_epochs':4,
+        'learning_rate':0.0001,
+    }
 
-config['policy_kwargs']['features_extractor_kwargs'] = dict(embedding_dim=config['embedding_dim'], feature_dim=config['feature_dim'], num_channels=config['num_channels'])
-config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
+    config['policy_kwargs']['features_extractor_kwargs'] = dict(feature_dim=config['feature_dim'], num_channels=config['num_channels'])
+    config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
+    channels_order = "last"
 
+    
+    venv= [make_env(config["env_name"], rank, seed=0, frame_skip=kwargs['frame_skip']) for rank in range(kwargs['num_envs'])]
+    venv = DummyVecEnv(venv)
+    # venv = CropGrayWrapper(venv)
+    venv = sb3.common.vec_env.VecFrameStack(venv, kwargs['n_stack'], channels_order=channels_order)
 
-n_stack = 4
-channels_order = "first"
+    run = wandb.init(
+        project="PPO_Pong",
+        config=config,
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        monitor_gym=True,  # auto-upload the videos of agents playing the game
+    )
 
-venv = make_vec_env(config['env_name'], n_envs=2)
-venv = sb3.common.vec_env.VecFrameStack(venv, n_stack, channels_order=channels_order)
-venv = CropGrayWrapper(venv)
+    model = sb3.PPO(
+        config["policy_type"], 
+        venv, 
+        policy_kwargs=config["policy_kwargs"], 
+        n_epochs=config['n_epochs'],
+        learning_rate=config['learning_rate'],
+        batch_size=config["batch_size"],
+        vf_coef=config["vf_coef"],
+        ent_coef=config["ent_coef"],
+        verbose=1, 
+        tensorboard_log=f"runs/{run.id}",
+    )
 
-model = ConvFeatureExtractor(venv.observation_space, config['embedding_dim'], config['feature_dim'], config['num_channels'])
+    model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=WandbCallback(
+            model_save_path=f"models/{run.id}",
+            verbose=2,
+        ),
+        eval_freq=kwargs["eval_freq"],
+        # TODO this doesn't work?!:
+        # eval_env=sb3.common.vec_env.VecFrameStack(DummyVecEnv([make_env(config["env_name"], 1, seed=0, frame_skip=kwargs["frame_skip"])]), kwargs["n_stack"], channels_order=channels_order),
+        # but this does:
+        eval_env=venv,
+    )
 
-run = wandb.init(
-    project="PPO_Pong",
-    config=config,
-    sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-    monitor_gym=True,  # auto-upload the videos of agents playing the game
-)
-
-model = sb3.PPO(
-    config["policy_type"], 
-    venv, 
-    policy_kwargs=config["policy_kwargs"], 
-    n_epochs=config['n_epochs'],
-    learning_rate=config['learning_rate'],
-    batch_size=config["batch_size"],
-    vf_coef=config["vf_coef"],
-    ent_coef=config["ent_coef"],
-    verbose=1, 
-    tensorboard_log=f"runs/{run.id}",
-)
-
-model.learn(
-    total_timesteps=config["total_timesteps"],
-    callback=WandbCallback(
-        model_save_path=f"models/{run.id}",
-        verbose=2,
-    ),
-)
-
-model_name = "PPO" if config['constant_env'] else "PPO_all"
-model.save(model_name)
-run.finish()
+    model_name = "PPO_pong"
+    model.save(model_name)
+    run.finish()
