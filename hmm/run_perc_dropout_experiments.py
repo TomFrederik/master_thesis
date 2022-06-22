@@ -30,9 +30,12 @@ for file in os.listdir(args['hparam_dir']):
     with open(os.path.join(args['hparam_dir'], file), 'r') as f:
         hparams = json.load(f)
     
-    run_args = train_args.copy()
+    for seed in range(args['num_seeds_per_run']):
+        run_args = train_args.copy()
 
-    # update with args from specific experiment
-    run_args.update(hparams)
-    
-    main(**run_args)
+        # update with args from specific experiment
+        run_args.update(hparams)
+        
+        run_args.update({"seed": seed})
+        
+        main(**run_args)
