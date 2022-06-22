@@ -1,21 +1,14 @@
 import argparse
-import logging
-import math
 import os
 from collections import namedtuple
 
-import einops
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
-from torchvision.utils import make_grid
 
-import wandb
-from datasets import TransitionData, construct_train_val_data
-from models import LightningNet, sum_factored_logits
-from sparsemax_k import sparsemax_k
+from datasets import construct_train_val_data
+from models import LightningNet
 
 from callbacks import ExtrapolateCallback, ReconstructionCallback
 
@@ -62,6 +55,7 @@ def main(
     kernel_size,
     num_actions,
     depth,
+    wandb_group,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
@@ -176,7 +170,7 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
-    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config)
+    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group)
     
     # callbacks
     callbacks = []
@@ -228,7 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--disable_vp', default='no', type=str, choices=['yes', 'no'])
     parser.add_argument('--sparsemax_k', type=int, default=30)
     parser.add_argument('--action_layer_dims', type=int, nargs='*', default=None)
-    parser.add_argument('--vp_layer_dims', type=int, nargs='*', default=None)
+    parser.add_argument('--vp_layer_dims', type=int, nargs='*', default=[128, 128])
     parser.add_argument('--vp_batchnorm', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--force_uniform_prior', type=str, choices=['yes', 'no'], default='no')
     parser.add_argument('--prior_noise_scale', type=float, default=0.0)
@@ -245,6 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--gradient_clip_val', type=float, default=0)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--detect_anomaly', action='store_true')
+    parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--track_grad_norm', type=int, default=-1)
     parser.add_argument('--max_len', type=int, default=10, help='Max length of an episode for batching purposes. Rest will be padded.')
     

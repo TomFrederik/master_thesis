@@ -1,7 +1,7 @@
 from typing import Optional
 
 import einops
-import einops.layers as layers
+import einops.layers.torch as layers
 import numpy as np
 import torch
 import torch.nn as nn
@@ -45,7 +45,7 @@ class Decoder(nn.Module):
         self.output_shape = output_shape
         
         self.linear = nn.Linear(latent_dim*num_vars, np.prod(self.conv_shape).item())
-        
+
         self.net = nn.Sequential(
             layers.Rearrange('b n d -> b (n d)'),
             self.linear,
