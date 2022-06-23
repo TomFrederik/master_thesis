@@ -26,7 +26,7 @@ train_args.update(best_hparams)
 train_args.update({"wandb_group": "dense_perc_dropout"})
 
 # perform runs
-for file in os.listdir(args['hparam_dir']):
+for i, file in enumerate(os.listdir(args['hparam_dir'])):
     with open(os.path.join(args['hparam_dir'], file), 'r') as f:
         hparams = json.load(f)
     
@@ -36,6 +36,6 @@ for file in os.listdir(args['hparam_dir']):
         # update with args from specific experiment
         run_args.update(hparams)
         
-        run_args.update({"seed": seed})
+        run_args.update({"seed": seed, "wandb_id": f"setting_{i}_seed_{seed}"})
         
         main(**run_args)

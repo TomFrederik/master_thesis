@@ -57,6 +57,7 @@ def main(
     num_actions,
     depth,
     wandb_group,
+    wandb_id,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
@@ -171,7 +172,7 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
-    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group)
+    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group, id=wandb_id)
     
     # callbacks
     callbacks = []

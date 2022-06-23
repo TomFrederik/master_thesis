@@ -45,6 +45,7 @@ def create_train_parser():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--detect_anomaly', action='store_true')
     parser.add_argument('--wandb_group', type=str, default=None)
+    parser.add_argument('--wandb_id', type=str, default=None)
     parser.add_argument('--track_grad_norm', type=int, default=-1)
     parser.add_argument('--max_len', type=int, default=10, help='Max length of an episode for batching purposes. Rest will be padded.')
     
