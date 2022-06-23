@@ -129,14 +129,15 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--n_stack', type=int, default=4)
-    parser.add_argument('--eval_freq', type=int, default=10_000)
+    parser.add_argument('--num_steps', type=int, default=10_000_000)
+    parser.add_argument('--eval_freq', type=int, default=100_000)
     parser.add_argument('--num_envs', type=int, default=2)
     kwargs = vars(parser.parse_args())
     
     
     config = {
         "policy_type": "MlpPolicy",
-        "total_timesteps": 5_000_000,
+        "total_timesteps": kwargs['num_steps'],
         "env_name": "Pong-v0",
         "policy_kwargs": dict(
             features_extractor_class=ConvFeatureExtractor,
