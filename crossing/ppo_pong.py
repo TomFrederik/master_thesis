@@ -137,7 +137,7 @@ if __name__ == "__main__":
     config = {
         "policy_type": "MlpPolicy",
         "total_timesteps": 5_000_000,
-        "env_name": "PongNoFrameSkip-v0",
+        "env_name": "Pong-v0",
         "policy_kwargs": dict(
             features_extractor_class=ConvFeatureExtractor,
         ),
