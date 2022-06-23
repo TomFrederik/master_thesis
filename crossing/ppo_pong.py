@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
     channels_order = "first" # CropGrayWrapper
     
-    venv= [make_env(config["env_name"], rank, seed=0, frame_skip=kwargs['frame_skip']) for rank in range(kwargs['num_envs'])]
+    venv= [make_env(config["env_name"], rank, seed=0) for rank in range(kwargs['num_envs'])]
     venv = DummyVecEnv(venv)
     venv = sb3.common.vec_env.VecFrameStack(venv, kwargs['n_stack'], channels_order=channels_order)
 
