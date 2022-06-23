@@ -110,14 +110,7 @@ class CropGrayWrapper(gym.ObservationWrapper):
 
         return observation
     
-    # def reset(self):
-    #     return self.observation(self.venv.reset())
-
-    # def step_wait(self):
-    #     out = self.venv.step_wait()
-    #     return (self.observation(out[0]), *out[1:])
-
-def make_env(env_id, rank, seed=0, frame_skip=4):
+def make_env(env_id, rank, seed=0):
         """
         Utility function for multiprocessed env.
 
@@ -128,7 +121,6 @@ def make_env(env_id, rank, seed=0, frame_skip=4):
         def _init():
             env = gym.make(env_id)
             env.seed(seed + rank)
-            # return AtariWrapper(env, frame_skip=frame_skip)
             return CropGrayWrapper(EpisodicLifeEnv(NoopResetEnv(env)))
         set_random_seed(seed)
         return _init
@@ -136,7 +128,6 @@ def make_env(env_id, rank, seed=0, frame_skip=4):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--frame_skip', type=int, default=4)
     parser.add_argument('--n_stack', type=int, default=4)
     parser.add_argument('--eval_freq', type=int, default=10_000)
     parser.add_argument('--num_envs', type=int, default=2)
@@ -146,7 +137,7 @@ if __name__ == "__main__":
     config = {
         "policy_type": "MlpPolicy",
         "total_timesteps": 5_000_000,
-        "env_name": "Pong-v0",
+        "env_name": "PongNoFrameSkip-v0",
         "policy_kwargs": dict(
             features_extractor_class=ConvFeatureExtractor,
         ),
@@ -164,7 +155,6 @@ if __name__ == "__main__":
     config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
     channels_order = "first" # CropGrayWrapper
-    # channels_order = "last" # Atari
     
     venv= [make_env(config["env_name"], rank, seed=0, frame_skip=kwargs['frame_skip']) for rank in range(kwargs['num_envs'])]
     venv = DummyVecEnv(venv)
@@ -197,10 +187,7 @@ if __name__ == "__main__":
             verbose=2,
         ),
         eval_freq=kwargs["eval_freq"],
-        # TODO this doesn't work?!:
-        eval_env=sb3.common.vec_env.VecFrameStack(DummyVecEnv([lambda: Monitor(make_env(config["env_name"], 1, seed=0, frame_skip=kwargs["frame_skip"])())]), kwargs["n_stack"], channels_order=channels_order),
-        # but this does?!:
-        # eval_env=venv,
+        eval_env=sb3.common.vec_env.VecFrameStack(DummyVecEnv([lambda: Monitor(make_env(config["env_name"], 1, seed=0)())]), kwargs["n_stack"], channels_order=channels_order),
     )
 
     model_name = "PPO_pong"
