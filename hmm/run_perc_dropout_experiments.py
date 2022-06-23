@@ -1,6 +1,7 @@
 import json
 import os
 from argparse import ArgumentParser
+import time
 
 from train_hmm import main
 from parsers import create_train_parser
@@ -25,6 +26,8 @@ with open(args['best_hparam_file'], 'r') as f:
 train_args.update(best_hparams)
 train_args.update({"wandb_group": "dense_perc_dropout"})
 
+job_id = int(time.time())
+
 # perform runs
 for i, file in enumerate(os.listdir(args['hparam_dir'])):
     with open(os.path.join(args['hparam_dir'], file), 'r') as f:
@@ -36,6 +39,6 @@ for i, file in enumerate(os.listdir(args['hparam_dir'])):
         # update with args from specific experiment
         run_args.update(hparams)
         
-        run_args.update({"seed": seed, "wandb_id": f"setting_{i}_seed_{seed}"})
+        run_args.update({"seed": seed, "wandb_id": f"setting_{i}_seed_{seed}_job_{job_id}"})
         
         main(**run_args)
