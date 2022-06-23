@@ -172,6 +172,8 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
+    print(wandb_group)
+    print(wandb_id)
     logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group, id=wandb_id)
     
     # callbacks
@@ -196,6 +198,9 @@ def main(
     )
     # start training
     trainer.fit(model, train_loader, val_loader)
+    
+    # finish logging
+    logger.experiment.finish()
 
 if __name__ == '__main__':
     parser = create_train_parser()
