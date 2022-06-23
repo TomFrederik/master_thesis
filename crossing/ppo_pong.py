@@ -10,11 +10,12 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 from gym_minigrid.wrappers import FullyObsWrapper
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.atari_wrappers import AtariWrapper, NoopResetEnv, EpisodicLifeEnv
 from stable_baselines3.common.vec_env.base_vec_env import VecEnvWrapper
 from torchvision.transforms import Grayscale, Resize
 from wandb.integration.sb3 import WandbCallback
@@ -56,7 +57,18 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
         self.conv_shape = (d, *conv4_shape)
         print(f"{self.conv_shape = }")
         
-        self.image_conv = nn.Sequential(
+        # self.net = nn.Sequential(
+        #     Rearrange('b c h w -> b (c h w)'),
+        #     nn.Linear(input_shape[0]*84*84, 256),
+        #     nn.ReLU(),
+        #     nn.Linear(256, 128),
+        #     nn.ReLU(),
+        #     nn.Linear(128, 64),
+        #     nn.ReLU(),
+        #     nn.Linear(64, feature_dim),
+        # )
+        
+        self.net = nn.Sequential(
             nn.Conv2d(input_shape[0], 8*d, k, stride),
             nn.ReLU(),
             nn.Conv2d(8*d, 4*d, k, stride),
@@ -68,24 +80,24 @@ class ConvFeatureExtractor(BaseFeaturesExtractor):
             nn.Linear(self.conv_shape[0] * self.conv_shape[1] * self.conv_shape[2], feature_dim),
         )
         
-        print("\nImage conv net:")
-        print(self.image_conv)
+        print("\nFeature Extractor net:")
+        print(self.net)
         
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        obs = self.image_conv(observations)
+        obs = self.net(observations)
         return obs
 
-class CropGrayWrapper(VecEnvWrapper):
-    def __init__(self, venv: VecEnvWrapper):
-        self.venv = venv
+class CropGrayWrapper(gym.ObservationWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self.env = env
         self.trafo_list = [
-            lambda x: x[:, :,35:-25],
+            lambda x: x[:, 35:-25],
             lambda x: x/228,
             Resize((84,84)),
             Grayscale(),
         ]
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(1, 84, 84), dtype=np.float32)
-        super().__init__(venv, observation_space=self.observation_space)
         
     def trafos(self, x):
         for trafo in self.trafo_list:
@@ -93,16 +105,17 @@ class CropGrayWrapper(VecEnvWrapper):
         return x
         
     def observation(self, observation):
-        observation = torch.from_numpy(einops.rearrange(observation, 'b h w c -> b c h w')).float()
+        observation = torch.from_numpy(einops.rearrange(observation, 'h w c -> c h w')).float()
         observation = self.trafos(observation).numpy() # extract channel
+
         return observation
     
-    def reset(self):
-        return self.observation(self.venv.reset())
+    # def reset(self):
+    #     return self.observation(self.venv.reset())
 
-    def step_wait(self):
-        out = self.venv.step_wait()
-        return (self.observation(out[0]), *out[1:])
+    # def step_wait(self):
+    #     out = self.venv.step_wait()
+    #     return (self.observation(out[0]), *out[1:])
 
 def make_env(env_id, rank, seed=0, frame_skip=4):
         """
@@ -115,7 +128,8 @@ def make_env(env_id, rank, seed=0, frame_skip=4):
         def _init():
             env = gym.make(env_id)
             env.seed(seed + rank)
-            return AtariWrapper(env, frame_skip=frame_skip)
+            # return AtariWrapper(env, frame_skip=frame_skip)
+            return CropGrayWrapper(EpisodicLifeEnv(NoopResetEnv(env)))
         set_random_seed(seed)
         return _init
 
@@ -125,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--frame_skip', type=int, default=4)
     parser.add_argument('--n_stack', type=int, default=4)
     parser.add_argument('--eval_freq', type=int, default=10_000)
-    parser.add_argument('--num_envs', type=int, default=1)
+    parser.add_argument('--num_envs', type=int, default=2)
     kwargs = vars(parser.parse_args())
     
     
@@ -149,12 +163,11 @@ if __name__ == "__main__":
     config['policy_kwargs']['features_extractor_kwargs'] = dict(feature_dim=config['feature_dim'], num_channels=config['num_channels'])
     config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
-    channels_order = "last"
-
+    channels_order = "first" # CropGrayWrapper
+    # channels_order = "last" # Atari
     
     venv= [make_env(config["env_name"], rank, seed=0, frame_skip=kwargs['frame_skip']) for rank in range(kwargs['num_envs'])]
     venv = DummyVecEnv(venv)
-    # venv = CropGrayWrapper(venv)
     venv = sb3.common.vec_env.VecFrameStack(venv, kwargs['n_stack'], channels_order=channels_order)
 
     run = wandb.init(
@@ -185,9 +198,9 @@ if __name__ == "__main__":
         ),
         eval_freq=kwargs["eval_freq"],
         # TODO this doesn't work?!:
-        # eval_env=sb3.common.vec_env.VecFrameStack(DummyVecEnv([make_env(config["env_name"], 1, seed=0, frame_skip=kwargs["frame_skip"])]), kwargs["n_stack"], channels_order=channels_order),
-        # but this does:
-        eval_env=venv,
+        eval_env=sb3.common.vec_env.VecFrameStack(DummyVecEnv([lambda: Monitor(make_env(config["env_name"], 1, seed=0, frame_skip=kwargs["frame_skip"])())]), kwargs["n_stack"], channels_order=channels_order),
+        # but this does?!:
+        # eval_env=venv,
     )
 
     model_name = "PPO_pong"
