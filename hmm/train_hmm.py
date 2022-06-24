@@ -172,8 +172,6 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
-    print(wandb_group)
-    print(wandb_id)
     logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group, id=wandb_id)
     
     # callbacks

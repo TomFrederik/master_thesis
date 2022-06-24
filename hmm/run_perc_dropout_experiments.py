@@ -40,5 +40,7 @@ for i, file in enumerate(os.listdir(args['hparam_dir'])):
         run_args.update(hparams)
         
         run_args.update({"seed": seed, "wandb_id": f"setting_{i}_seed_{seed}_job_{job_id}"})
-        
-        main(**run_args)
+        try:
+            main(**run_args)
+        except Exception as e:
+            print(f"Error running experiment: {e}")
