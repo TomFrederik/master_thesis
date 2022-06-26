@@ -20,6 +20,7 @@ from stable_baselines3.common.vec_env.base_vec_env import VecEnvWrapper
 from torchvision.transforms import Grayscale, Resize
 from wandb.integration.sb3 import WandbCallback
 
+import matplotlib.pyplot as plt
 import wandb
 
 
@@ -92,15 +93,18 @@ class CropGrayWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.env = env
         self.trafo_list = [
-            lambda x: x[:, 35:-25],
-            lambda x: x/228,
+            lambda x: x[:, 35:-15],
+            lambda x: x/255,
             Resize((84,84)),
             Grayscale(),
+            lambda x: x - 0.5,
+            lambda x: x * 2,
         ]
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(1, 84, 84), dtype=np.float32)
         
     def trafos(self, x):
-        for trafo in self.trafo_list:
+        old_x = x.clone()
+        for i, trafo in enumerate(self.trafo_list):
             x = trafo(x)
         return x
         
