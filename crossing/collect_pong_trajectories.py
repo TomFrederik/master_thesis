@@ -31,11 +31,8 @@ def main(
     action_list = []
     done_list = []
     reward_list = []
-    traj = 0
 
-    import matplotlib.pyplot as plt
-
-    while traj < num_trajectories:
+    for traj in tqdm(range(num_trajectories)):
         obs = venv.reset()
         done = False
         done_candidates = [int(done)] 
@@ -48,15 +45,12 @@ def main(
             obs, rewards, done, info = venv.step(action)
             action_candidates.append(action)
             done_candidates.append(int(done))
-            plt.imshow(obs_candidates[-1][0], cmap='gray')
-            plt.show()
-            plt.close()
             
         action, _states = model.predict(obs)
         obs_candidates.append(obs)
         action_candidates.append(action)    
         reward_candidates.append(rewards)
-        traj += 1
+
         done_list.extend(done_candidates)
         obs_list.extend(obs_candidates)
         action_list.extend(action_candidates)
