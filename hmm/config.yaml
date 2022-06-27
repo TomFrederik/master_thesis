@@ -1,0 +1,339 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.12.11
+    code_path: code/hmm/run_perc_dropout_experiments.py
+    framework: huggingface
+    huggingface_version: 4.16.0
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    m:
+    - 1: trainer/global_step
+      6:
+      - 3
+    - 1: Training/prior_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/value_prefix_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/recon_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/dyn_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/prior_entropy
+      5: 1
+      6:
+      - 1
+    - 1: Training/posterior_entropy
+      5: 1
+      6:
+      - 1
+    - 1: Training/unscaled_dyn_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/unscaled_prior_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/total_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/total_unscaled_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/tuning_loss
+      5: 1
+      6:
+      - 1
+    - 1: Training/RewPlusUnscDyn
+      5: 1
+      6:
+      - 1
+    - 1: epoch
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation._type
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.path
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.sha256
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.size
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.format
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.width
+      5: 1
+      6:
+      - 1
+    - 1: Extrapolation.height
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction._type
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.path
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.sha256
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.size
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.format
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.width
+      5: 1
+      6:
+      - 1
+    - 1: Reconstruction.height
+      5: 1
+      6:
+      - 1
+    - 1: Validation/prior_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/value_prefix_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/recon_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/dyn_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/prior_entropy
+      5: 1
+      6:
+      - 1
+    - 1: Validation/posterior_entropy
+      5: 1
+      6:
+      - 1
+    - 1: Validation/unscaled_dyn_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/unscaled_prior_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/total_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/total_unscaled_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/tuning_loss
+      5: 1
+      6:
+      - 1
+    - 1: Validation/RewPlusUnscDyn
+      5: 1
+      6:
+      - 1
+    python_version: 3.9.6
+    start_time: 1656116087
+    t:
+      1:
+      - 1
+      - 9
+      - 11
+      - 12
+      - 41
+      - 49
+      - 51
+      2:
+      - 1
+      - 9
+      - 11
+      - 12
+      - 41
+      - 49
+      - 51
+      3:
+      - 2
+      - 7
+      - 14
+      - 16
+      4: 3.9.6
+      5: 0.12.11
+      6: 4.16.0
+      8:
+      - 5
+action_layer_dims:
+  desc: null
+  value: None
+codebook_size:
+  desc: null
+  value: 2
+depth:
+  desc: null
+  value: 64
+device:
+  desc: null
+  value: cuda
+disable_recon_loss:
+  desc: null
+  value: false
+disable_vp:
+  desc: null
+  value: false
+discount_factor:
+  desc: null
+  value: 0.99
+dropout:
+  desc: null
+  value: 0
+embedding_dim:
+  desc: null
+  value: 128
+emission_kwargs/codebook_size:
+  desc: null
+  value: 2
+emission_kwargs/depth:
+  desc: null
+  value: 64
+emission_kwargs/embedding_dim:
+  desc: null
+  value: 128
+emission_kwargs/kernel_size:
+  desc: null
+  value: 3
+emission_kwargs/num_input_channels:
+  desc: null
+  value: 2
+emission_kwargs/num_variables:
+  desc: null
+  value: 10
+emission_kwargs/scale:
+  desc: null
+  value: 1
+emission_kwargs/sparse:
+  desc: null
+  value: false
+force_uniform_prior:
+  desc: null
+  value: true
+gradient_clip_val:
+  desc: null
+  value: 5
+kernel_size:
+  desc: null
+  value: 3
+kl_balancing_coeff:
+  desc: null
+  value: 0.8
+kl_scaling:
+  desc: null
+  value: 0.3
+l_unroll:
+  desc: null
+  value: 1
+learning_rate:
+  desc: null
+  value: 0.0005
+max_datapoints:
+  desc: null
+  value: null
+max_len:
+  desc: null
+  value: 10
+num_actions:
+  desc: null
+  value: 4
+num_seeds:
+  desc: null
+  value: null
+num_variables:
+  desc: null
+  value: 10
+num_views:
+  desc: null
+  value: 2
+obs_scale:
+  desc: null
+  value: 1
+percentages:
+  desc: null
+  value:
+  - 0.75
+  - 0.75
+prior_noise_scale:
+  desc: null
+  value: 0.0
+reward_support:
+  desc: null
+  value:
+  - 0
+  - 1
+  - 1
+seed:
+  desc: null
+  value: 2
+sparsemax:
+  desc: null
+  value: false
+sparsemax_k:
+  desc: null
+  value: 30
+state_dim:
+  desc: null
+  value: 1024
+test_only_dropout:
+  desc: null
+  value: false
+vp_batchnorm:
+  desc: null
+  value: false
+vp_kwargs/mlp_hidden_dims:
+  desc: null
+  value:
+  - 128
+  - 128
+vp_kwargs/num_values:
+  desc: null
+  value: 1
+vp_kwargs/vp_batchnorm:
+  desc: null
+  value: false
+weight_decay:
+  desc: null
+  value: 1.0e-06
