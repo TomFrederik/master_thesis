@@ -17,7 +17,7 @@ def main(
 ):
         
     model_name = "PPO_pong"
-    data_file = f"ppo_pong_experience"
+    data_file = "ppo_pong_experience"
     model = sb3.PPO.load(model_name)
 
     # set up environment
@@ -47,7 +47,7 @@ def main(
             done_candidates.append(int(done))
             
         action, _states = model.predict(obs)
-        obs_candidates.append(obs)
+        obs_candidates.append(obs[:, 0])
         action_candidates.append(action)    
         reward_candidates.append(rewards)
 
@@ -55,6 +55,7 @@ def main(
         obs_list.extend(obs_candidates)
         action_list.extend(action_candidates)
         reward_list.extend(reward_candidates)
+    
     np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), rewards=np.array(reward_list), done=np.array(done_list))
 
 
