@@ -67,7 +67,9 @@ class DiscreteNet(nn.Module):
         obs_probs = F.softmax(obs_logits, dim=1) # (batch, num_states, num_views)
         posterior = prior
         for view in range(obs_probs.shape[-1]):
-            posterior = posterior * obs_probs[...,view] * (1- dropped)[:, None, view]
+            update = obs_probs[...,view] * (1- dropped)[:, None, view]
+            posterior = torch.where(update == 0, posterior, update * posterior)
+        
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
 
