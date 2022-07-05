@@ -38,18 +38,18 @@ def main(
         done_candidates = [int(done)] 
         obs_candidates = []
         action_candidates = []
-        reward_candidates = []
+        reward_candidates = [np.zeros((1,), dtype=np.float32)]
         while not done:
             action, _states = model.predict(obs)
             obs_candidates.append(obs[:, 0]) # (1, 4, 84, 84) -> (1, 84, 84)
-            obs, rewards, done, info = venv.step(action)
+            obs, reward, done, info = venv.step(action)
             action_candidates.append(action)
+            reward_candidates.append(reward)
             done_candidates.append(int(done))
             
         action, _states = model.predict(obs)
         obs_candidates.append(obs[:, 0])
         action_candidates.append(action)    
-        reward_candidates.append(rewards)
 
         done_list.extend(done_candidates)
         obs_list.extend(obs_candidates)
