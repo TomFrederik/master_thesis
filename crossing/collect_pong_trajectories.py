@@ -41,21 +41,20 @@ def main(
         reward_candidates = [np.zeros((1,), dtype=np.float32)]
         while not done:
             action, _states = model.predict(obs)
-            obs_candidates.append(obs[:, 0]) # (1, 4, 84, 84) -> (1, 84, 84)
+            obs_candidates.append(obs[0, 0]) # (1, 4, 84, 84) -> (84, 84)
             obs, reward, done, info = venv.step(action)
             action_candidates.append(action)
             reward_candidates.append(reward)
             done_candidates.append(int(done))
             
         action, _states = model.predict(obs)
-        obs_candidates.append(obs[:, 0])
+        obs_candidates.append(obs[0, 0])
         action_candidates.append(action)    
 
         done_list.extend(done_candidates)
         obs_list.extend(obs_candidates)
         action_list.extend(action_candidates)
         reward_list.extend(reward_candidates)
-    
     np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), rewards=np.array(reward_list), done=np.array(done_list))
 
 
