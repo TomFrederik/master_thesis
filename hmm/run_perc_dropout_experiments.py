@@ -30,6 +30,8 @@ job_id = int(time.time())
 
 # perform runs
 for i, file in enumerate(os.listdir(args['hparam_dir'])):
+    setting_id = file.split('.')[0]
+    
     with open(os.path.join(args['hparam_dir'], file), 'r') as f:
         hparams = json.load(f)
     
@@ -39,7 +41,9 @@ for i, file in enumerate(os.listdir(args['hparam_dir'])):
         # update with args from specific experiment
         run_args.update(hparams)
         
-        run_args.update({"seed": seed, "wandb_id": f"setting_{i}_seed_{seed}_job_{job_id}"})
+        run_args.update({"seed": seed, "wandb_id": f"setting_{setting_id}_seed_{seed}_job_{job_id}"})
+        
+        print("Running with hparams: ", hparams)
         try:
             main(**run_args)
         except Exception as e:
