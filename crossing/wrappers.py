@@ -415,6 +415,7 @@ class MyFullWrapper(gym.ObservationWrapper):
     
     def observation(self, observation):
         obs = observation['image'][1:-1,1:-1,0].astype(np.int64)
+        obs[obs == 10] = 1
         # experimental
         obs[-1,-1] = 3  
         obs[self.env.agent_pos[0]-1, self.env.agent_pos[1]-1] = 0

@@ -77,7 +77,7 @@ def main(
     if env_name == 'toy':
         file_name = f"ppo_all_env_experience.npz"
     elif env_name == 'pong':
-        file_name = f"ppo_pong_experience.npz"
+        file_name = f"pong_data.hdf5"
     else:
         raise NotImplementedError(f"Unknown env_name: {env_name}")
     data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

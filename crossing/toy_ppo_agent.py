@@ -55,7 +55,6 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 config = {
-    "constant_env":False,
     "policy_type": "MlpPolicy",
     "total_timesteps": 500000,
     "env_name": "MiniGrid-SimpleCrossingS9N1-v0",
@@ -82,8 +81,6 @@ env = gym.make(config['env_name'])
 env = StepWrapper(env)
 env = FullyObsWrapper(env)
 env = MyFullWrapper(env)
-if config['constant_env']:
-    env = NumSeedsEnvWrappper(env, 1)
 
 run = wandb.init(
     project="MiniGrid-Crossing",
@@ -113,6 +110,6 @@ model.learn(
     ),
 )
 
-model_name = "PPO" if config['constant_env'] else "PPO_all"
+model_name = "PPO_toy"
 model.save(model_name)
 run.finish()
