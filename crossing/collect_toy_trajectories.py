@@ -19,7 +19,7 @@ def main(
     f.create_group('action')
     f.create_group('reward')
     
-    model_name = "toy_ppo"
+    model_name = "PPO_toy"
     model = sb3.PPO.load(model_name)
 
     # set up environment

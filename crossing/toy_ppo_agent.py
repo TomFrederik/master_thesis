@@ -11,8 +11,10 @@ import torch
 import torch.nn as nn
 import wandb
 from wandb.integration.sb3 import WandbCallback
-
+from gym_minigrid.envs import SimpleCrossingEnv
 from wrappers import MultiViewWrapper, DropoutWrapper, MyFullFlatWrapper, MyFullWrapper, NumSeedsEnvWrappper, StepWrapper
+
+from stable_baselines3.common import env_checker
 
 class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
     def __init__(
@@ -26,7 +28,7 @@ class EmbeddingFeatureExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, feature_dim)
 
         self.num_embeddings = 4
-        embedding_dim=4
+        embedding_dim = 4
 
         # self.embedding = nn.Embedding(self.num_embeddings, embedding_dim)
 
@@ -72,21 +74,32 @@ config = {
     'learning_rate':0.0001,
 }
 
-
-
 config['policy_kwargs']['features_extractor_kwargs'] = dict(embedding_dim=config['embedding_dim'], feature_dim=config['feature_dim'], num_channels=config['num_channels'])
 config['policy_kwargs']['net_arch'] = [dict(pi=[config['feature_dim'], config['network_dim']], vf=[config['feature_dim'], config['network_dim']])]
 
-env = gym.make(config['env_name'])
+env = gym.make("MiniGrid-SimpleCrossingS9N1-v0")
+# env = gym.make(config['env_name'])
+env_checker.check_env(env)
+if not isinstance(env, SimpleCrossingEnv):
+    raise TypeError
 env = StepWrapper(env)
 env = FullyObsWrapper(env)
 env = MyFullWrapper(env)
-
+obs = env.reset()
+done = False
+while not done:
+    print(obs)
+    obs, reward, done, info = env.step(env.action_space.sample())
+    print(reward)
+print(obs)
+obs = env.reset()
+print(obs)
+raise NotImplementedError
 run = wandb.init(
     project="MiniGrid-Crossing",
     config=config,
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-    monitor_gym=True,  # auto-upload the videos of agents playing the game
+    # monitor_gym=True,  # auto-upload the videos of agents playing the game
 )
 
 model = sb3.PPO(

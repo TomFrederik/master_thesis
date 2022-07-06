@@ -487,14 +487,15 @@ class StepWrapper(gym.Wrapper):
 
         # Get the contents of the next cell
         next_content = self.env.grid.get(*next_cell)
-
         # Move forward
-        if next_content == None or next_content.can_overlap():
+        if next_content is None:
             self.env.agent_pos = next_cell
-        if next_content != None and next_content.type == 'goal':
+        elif next_content.type == 'goal':
             done = True
-            reward = self.env._reward()
-        if next_content != None and next_content.type == 'lava':
+            self.env.agent_pos = next_cell
+            # self.env.step_count = 0
+            reward = 1
+        elif next_content.type == 'lava':
             done = True
 
         if self.env.step_count >= self.env.max_steps:
@@ -503,6 +504,17 @@ class StepWrapper(gym.Wrapper):
         obs = self.env.gen_obs()
 
         return obs, reward, done, {}
+
+    def reset(self, **kwargs):
+        print('\nCalling reset')
+        print(kwargs)
+        print(self.env.agent_pos)
+        print(type(self.env))
+        obs = self.env.reset(**kwargs)
+        print(self.env.step_count)
+        print(self.env.agent_pos)
+        print()
+        return obs
 
 class OneHotActionToIndex(gym.ActionWrapper):
     def __init__(self, env):

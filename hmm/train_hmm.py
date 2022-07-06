@@ -7,7 +7,7 @@ import torch
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from datasets import construct_train_val_data
+from datasets import construct_toy_train_val_data, construct_pong_train_val_data
 from models import LightningNet
 
 from callbacks import ExtrapolateCallback, ReconstructionCallback
@@ -96,7 +96,10 @@ def main(
         scale=obs_scale,
     )
     
-    train_data, val_data = construct_train_val_data(data_path, **data_kwargs)
+    if env_name == 'toy':
+        train_data, val_data = construct_toy_train_val_data(data_path, **data_kwargs)
+    elif env_name == 'pong':
+        train_data, val_data = construct_pong_train_val_data(data_path, **data_kwargs)
             
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)

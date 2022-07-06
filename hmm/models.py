@@ -68,7 +68,9 @@ class DiscreteNet(nn.Module):
         posterior = prior
         for view in range(obs_probs.shape[-1]):
             update = obs_probs[...,view] * (1- dropped)[:, None, view]
-            posterior = torch.where(update == 0, posterior, update * posterior)
+            # this is a bit hacky but the idea is that the condition evaluates to true if the view is dropped and the update is 0
+            # this means that if the view is not dropped (but the update is 0) the posterior is still 0 for that state
+            posterior = torch.where((update + (1-dropped)[:,None,view]) == 0, posterior, update * posterior)
         
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
@@ -78,20 +80,7 @@ class DiscreteNet(nn.Module):
         batch_size, seq_len, channels, h, w = obs_sequence.shape
         dimension = h * w * channels
         if not self.disable_vp:
-            # # compute target value prefixes
-            # print(f"{reward_sequence.shape = }")
-            # target_value_prefixes = self.compute_value_prefixes(reward_sequence)
-            # print(f"{target_value_prefixes.shape = }")
-            
-            # # convert them to classes
-            # transformed_target_value_prefixes = self.scalar_transform(value_prefix_sequence)
-            # target_value_prefixes = self.reward_phi(transformed_target_value_prefixes)
             target_value_prefixes = value_prefix_sequence
-            # emission model to get emission probs for all possible latent states
-            # obs sequence has shape (batch, seq, num_views, 7, 7)
-            
-            # get vp means for each state
-            # value_prefix_means = self.value_prefix_predictor()[:,0] # has shape (num_states, )
         else:
             target_value_prefixes = None
             
@@ -143,9 +132,6 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_loss = 0
         
-        print(value_prefix_pred)
-        print(target_value_prefixes)
-
         outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
         outputs['value_prefix_loss'] = value_prefix_loss 
         outputs['recon_loss'] = recon_loss / dimension
@@ -382,7 +368,7 @@ class LightningNet(pl.LightningModule):
         if torch.isnan(total_loss).any():
             for key, value in outputs.items():
                 print(f"{key}: {value}")
-            logging.warning("Total loss is NaN!")
+            raise ValueError("Total loss is NaN!")
         return total_loss
     
     def validation_step(self, batch, batch_idx):
