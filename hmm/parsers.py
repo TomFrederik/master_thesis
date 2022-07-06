@@ -4,15 +4,13 @@ def create_train_parser():
     parser = argparse.ArgumentParser()
     
     # env settings
-    parser.add_argument('--num_seeds', type=int, default=None)
-    parser.add_argument('--null_value', type=int, default=1)
+    parser.add_argument('--null_value', type=int, default=1, help="Value to use for dropped frames")
     parser.add_argument('--num_views', type=int, default=1)
     parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--test_only_dropout', default='no', type=str, choices=['yes', 'no'])
-    parser.add_argument('--max_datapoints', type=int, default=None)
     parser.add_argument('--obs_scale', type=int, default=1)
-    parser.add_argument('--num_actions', type=int, default=4)
+    parser.add_argument('--env_name', type=str, default='toy', choices=['toy', 'pong'])
     
     ## model args
     parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)

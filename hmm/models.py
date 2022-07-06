@@ -75,7 +75,6 @@ class DiscreteNet(nn.Module):
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
         outputs = dict()
-
         batch_size, seq_len, channels, h, w = obs_sequence.shape
         dimension = h * w * channels
         if not self.disable_vp:
@@ -381,7 +380,9 @@ class LightningNet(pl.LightningModule):
         self.log(f"Training/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
         self.log(f"Training/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         if torch.isnan(total_loss).any():
-            raise ValueError("Total loss is NaN!")
+            for key, value in outputs.items():
+                print(f"{key}: {value}")
+            logging.warning("Total loss is NaN!")
         return total_loss
     
     def validation_step(self, batch, batch_idx):

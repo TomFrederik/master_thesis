@@ -71,18 +71,14 @@ def _extract_transition_tuples(dones, action, obs):
     # val_data = TransitionData(val_transitions, sigma, mu, mvwrapper, drop=True)
     # return train_data, val_data
 
-def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, **kwargs):
+def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
     data = np.load(data_path)
     dones = data['done']
     obs = data['obs']
     action = data['action']
-        
     sigma = np.std(obs)
     mu = np.mean(obs)
     obs, actions = _split_trajs(dones, action, obs)
-    if max_datapoints is not None:
-        obs = obs[:max_datapoints]
-        actions = actions[:max_datapoints]
     if multiview:
         multiview_wrapper = FunctionalMVW(kwargs['percentages'], kwargs['dropout'], kwargs['null_value'])
     else:
@@ -94,8 +90,8 @@ def load_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=No
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
 
-def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, scale=1.0, **kwargs):
-    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, **kwargs)
+def construct_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
+    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, **kwargs)
     train_data = BatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
     val_data = BatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
     return train_data, val_data
@@ -170,6 +166,7 @@ class BatchTrajToyData(Dataset):
         self.mvwrapper = mvwrapper
         self.max_len = max_len
         self.scale = scale
+        self.img_shape = self.obs[0].shape[-2:]
         
     def set_drop(self, drop: bool):
         self.drop = drop
@@ -211,7 +208,6 @@ class BatchTrajToyData(Dataset):
         else:
             obs = obs[:,None]
             dropped = np.zeros((obs.shape[0], 1))
-        
         # scale up
         obs = scale_obs(obs, self.scale)
         

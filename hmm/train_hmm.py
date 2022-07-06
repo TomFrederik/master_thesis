@@ -17,7 +17,6 @@ RewardSupport = namedtuple("RewardSupport", ["min", "max", "size"])
 
         
 def main(
-    num_seeds,
     num_views,
     null_value,
     percentage,
@@ -41,7 +40,6 @@ def main(
     seed,
     detect_anomaly,
     test_only_dropout,
-    max_datapoints,
     track_grad_norm,
     disable_recon_loss,
     sparsemax,
@@ -54,10 +52,10 @@ def main(
     prior_noise_scale,
     obs_scale,
     kernel_size,
-    num_actions,
     depth,
     wandb_group,
     wandb_id,
+    env_name,
 ):
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
@@ -73,11 +71,15 @@ def main(
     percentages = [percentage] * num_views
     num_input_channels = len(percentages)
     
-    pl.seed_everything(seed)
+    pl.seed_everything(seed, workers=True)
     
     # get data path
-    suffix = 'all' if num_seeds is None else str(num_seeds)
-    file_name = f"ppo_{suffix}_env_experience.npz"
+    if env_name == 'toy':
+        file_name = f"ppo_all_env_experience.npz"
+    elif env_name == 'pong':
+        file_name = f"ppo_pong_experience.npz"
+    else:
+        raise NotImplementedError(f"Unknown env_name: {env_name}")
     data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(data_path, file_name)
     
@@ -87,7 +89,6 @@ def main(
         null_value=null_value,
         percentages=percentages,
         dropout=dropout,
-        max_datapoints=max_datapoints,
         test_only_dropout=test_only_dropout,
         train_val_split=0.9,
         batch_size=batch_size,
@@ -107,6 +108,7 @@ def main(
         embedding_dim=embedding_dim,
         num_variables=num_variables,
         sparse=sparsemax,
+        img_shape=train_data.img_shape,
         scale=obs_scale,
         kernel_size=kernel_size,
         depth=depth,
@@ -118,6 +120,8 @@ def main(
         mlp_hidden_dims=vp_layer_dims,
         vp_batchnorm=vp_batchnorm,
     )
+    
+    num_actions = {'pong': 6, 'toy': 4}[env_name]
     
     model = LightningNet(
         codebook_size ** num_variables,
@@ -146,7 +150,6 @@ def main(
         seed=seed,
         codebook_size=codebook_size,
         num_variables=num_variables,
-        num_seeds=num_seeds,
         embedding_dim=embedding_dim,
         kl_balancing_coeff=kl_balancing_coeff,
         l_unroll=l_unroll,
@@ -157,7 +160,6 @@ def main(
         percentages=percentages,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
-        max_datapoints=max_datapoints,
         disable_recon_loss=disable_recon_loss,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
@@ -193,6 +195,7 @@ def main(
         track_grad_norm=track_grad_norm,
         log_every_n_steps=1,
         num_sanity_val_steps=1,
+        deterministic=True
     )
     # start training
     trainer.fit(model, train_loader, val_loader)
