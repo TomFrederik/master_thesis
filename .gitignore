@@ -145,3 +145,4 @@ hmm/wandb
 # data
 *.zip
 *.npz
+*.hdf5
