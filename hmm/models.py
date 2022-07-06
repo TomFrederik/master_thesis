@@ -72,7 +72,8 @@ class DiscreteNet(nn.Module):
             # this means that if the view is not dropped (but the update is 0) the posterior is still 0 for that state
             posterior = torch.where((update + (1-dropped)[:,None,view]) == 0, posterior, update * posterior)
         
-        posterior = posterior / posterior.sum(dim=-1, keepdim=True)
+        # make sure that posterior is normalized
+        posterior = posterior / (posterior.sum(dim=-1, keepdim=True) + 1e-8)
         return posterior, obs_logits
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
