@@ -43,7 +43,7 @@ for i, file in enumerate(os.listdir(args['hparam_dir'])):
         
         run_args.update({"seed": seed, "wandb_id": f"setting_{setting_id}_seed_{seed}_job_{job_id}"})
         
-        print("Running with hparams: ", hparams)
+        print(f"Setting ID = {setting_id}, Running with hparams: {hparams}, seed: {seed}")
         try:
             main(**run_args)
         except Exception as e:

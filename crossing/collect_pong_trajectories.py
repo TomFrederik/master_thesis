@@ -11,11 +11,22 @@ from stable_baselines3.common.atari_wrappers import EpisodicLifeEnv, NoopResetEn
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env import VecFrameStack
 from ppo_pong import CropGrayWrapper, make_env
+import h5py
 
 def main(
     num_trajectories,
 ):
-        
+
+    f = h5py.File('pong_data.hdf5', 'a')
+    try:
+        f.create_dataset('done', dtype=int, chunks=(0,))
+        f.create_dataset('obs', dtype=float, chunks=(0,84,84))
+        f.create_dataset('action', dtype=int, chunks=(0,))
+        f.create_dataset('reward', dtype=float, chunks=(0,))
+    except:
+        pass
+        # dset = h5py.Group.create_dataset("trajs")
+
     model_name = "PPO_pong"
     data_file = "ppo_pong_experience"
     model = sb3.PPO.load(model_name)
@@ -55,8 +66,27 @@ def main(
         obs_list.extend(obs_candidates)
         action_list.extend(action_candidates)
         reward_list.extend(reward_candidates)
-    np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), rewards=np.array(reward_list), done=np.array(done_list))
 
+    
+        f['done'].resize((f['done'].shape[0] + len(done_candidates),))
+        f['reward'].resize((f['done'].shape[0] + len(done_candidates),))
+        f['action'].resize((f['done'].shape[0] + len(done_candidates),))
+        f['obs'].resize(f['done'].shape[0] + len(done_candidates), axis=0)
+    
+        f['done'][-len(done_candidates):] = np.array(done_candidates)
+        f['reward'][-len(done_candidates):] = np.array(reward_candidates)
+        f['action'][-len(done_candidates):] = np.array(done_candidates)
+        f['obs'][-len(done_candidates):] = np.array(obs_candidates)
+
+        print(f['done'].shape)
+        print(f['reward'].shape)
+        print(f['action'].shape)
+        print(f['obs'].shape)
+        
+    f.close()    
+    
+    # np.savez_compressed(data_file, obs=np.array(obs_list), action=np.array(action_list), rewards=np.array(reward_list), done=np.array(done_list))
+    # data = np.load(data_file+".npz")
 
 
 
