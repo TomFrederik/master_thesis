@@ -73,7 +73,8 @@ class DiscreteNet(nn.Module):
             posterior = torch.where((update + (1-dropped)[:,None,view]) == 0, posterior, update * posterior)
         
         # make sure that posterior is normalized
-        posterior = posterior / (posterior.sum(dim=-1, keepdim=True) + 1e-8)
+        posterior = posterior + 1e-8
+        posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
