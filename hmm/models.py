@@ -67,20 +67,38 @@ class DiscreteNet(nn.Module):
         obs_probs = F.softmax(obs_logits, dim=1) # (batch, num_states, num_views)
         posterior = prior
         for view in range(obs_probs.shape[-1]):
-            update = obs_probs[...,view] * (1- dropped)[:, None, view]
+            update = obs_probs[...,view] * (1 - dropped)[:, None, view]
+            # print(f"update {view}: {update = }")
+            nonzeros = torch.sum(update > 1e-6, dim=1)
             # this is a bit hacky but the idea is that the condition evaluates to true if the view is dropped and the update is 0
             # this means that if the view is not dropped (but the update is 0) the posterior is still 0 for that state
             posterior = torch.where((update + (1-dropped)[:,None,view]) == 0, posterior, update * posterior)
         
+            # I'm not very confident that this is correct so I'll implement it inefficiently
+            # if view != 0:
+            #     continue
+            # posterior = posterior * update # this only works because we never use drop out
+            # if torch.sum(dropped) > 0:
+            #     raise ValueError('re-adapt to dropout > 0')
+            # for batch in range(dropped.shape[0]):
+            #     if dropped[batch, view] == 1:
+            #         raise ValueError("this should never happen for dropout = 0")
+            #         continue
+            #     elif dropped[batch, view] == 0:
+            #         print(update[batch])
+            #         posterior[batch] = posterior[batch] * update[batch]
+            #     else:
+            #         raise ValueError(dropped[batch, view])            
+        
         # make sure that posterior is normalized
-        posterior = posterior + 1e-8
+        posterior = posterior + 1e-8 # add a small constant to avoid numerical issues
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
 
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
         outputs = dict()
         batch_size, seq_len, channels, h, w = obs_sequence.shape
-        dimension = h * w * channels
+        dimension = h * w 
         if not self.disable_vp:
             target_value_prefixes = value_prefix_sequence
         else:
@@ -232,8 +250,19 @@ class DiscreteNet(nn.Module):
         # obs_logits_sequence has shape (batch, seq_len, num_active_state, num_views)
         # dropped has shape (batch, seq_len, num_views)
         recon_loss = 0
+        # print(f"{posterior_belief_sequence.shape = }")
+        # print(f"{obs_logits_sequence.shape = }")
+        # print(f"{dropped.shape = }")
+        # print(f"{nonterms.shape = }")
         if not self.disable_recon_loss:
-            recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=[2,3]) * nonterms).sum(dim=-1).mean()
+            for view in range(dropped.shape[-1]):
+                # if view != 0:
+                #     continue
+                view_loss = ((-(1-dropped)[:,:,None,view] * posterior_belief_sequence * obs_logits_sequence[...,view]).sum(dim=2) * nonterms).sum(dim=-1).mean()
+                recon_loss = recon_loss + view_loss
+                print(f"view {view}: {view_loss = }")
+                
+            # recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=[2,3]) * nonterms).sum(dim=-1).mean()
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):

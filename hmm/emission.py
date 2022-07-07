@@ -163,7 +163,7 @@ class EmissionModel(nn.Module):
 
     def get_emission_means(self):
         z = self.latent_embedding[torch.arange(self.num_variables),self.all_idcs,:]
-        emission_probs = torch.stack([decoder(z)[:,0] for decoder in self.decoders], dim=1)
+        emission_probs = torch.cat([decoder(z) for decoder in self.decoders], dim=1)
         return emission_probs
         
     def compute_obs_logits_sparse(self, x, emission_means):

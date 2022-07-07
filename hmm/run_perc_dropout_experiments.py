@@ -15,6 +15,7 @@ parser = ArgumentParser()
 parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout')
 parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/hmm/best_hparams_dense.json')
 parser.add_argument('--num_seeds_per_run', type=int, default=3)
+parser.add_argument('--job_id', type=int, default=None)
 args = vars(parser.parse_args())
 
 print("hparam_dir:", args['hparam_dir'])
@@ -26,8 +27,11 @@ with open(args['best_hparam_file'], 'r') as f:
 train_args.update(best_hparams)
 train_args.update({"wandb_group": "dense_perc_dropout"})
 
-job_id = int(time.time())
-
+if args['job_id'] is None:
+    job_id = int(time.time())
+else:
+    job_id = args['job_id']
+    
 # perform runs
 for i, file in enumerate(os.listdir(args['hparam_dir'])):
     setting_id = file.split('.')[0]
