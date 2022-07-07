@@ -7,18 +7,24 @@ from train_hmm import main
 from parsers import create_train_parser
 
 
-
-# parse args for experiment
-parser = ArgumentParser()
-parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout')
-parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/hmm/best_hparams_dense.json')
-parser.add_argument('--num_seeds_per_run', type=int, default=3)
-parser.add_argument('--job_id', type=int, default=None)
-args = vars(parser.parse_args())
-
-# load default train args
+# create parser and add arguments
 train_parser: ArgumentParser = create_train_parser()
+train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout')
+train_parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/hmm/best_hparams_dense.json')
+train_parser.add_argument('--num_seeds_per_run', type=int, default=3)
+train_parser.add_argument('--job_id', type=int, default=None)
 train_args = vars(train_parser.parse_args())
+
+args = {
+    "hparam_dir": train_args['hparam_dir'],
+    "best_hparam_file": train_args['best_hparam_file'],
+    "num_seeds_per_run": train_args['num_seeds_per_run'],
+    "job_id": train_args['job_id'],
+}
+
+for param in args:
+    del train_args[param]
+    assert param not in train_args, f"{param} is in both args and train_args"
 
 print("hparam_dir:", args['hparam_dir'])
 print("Loading best hparams from {}".format(args['best_hparam_file']))
