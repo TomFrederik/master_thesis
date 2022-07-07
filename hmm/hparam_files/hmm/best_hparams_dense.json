@@ -1,7 +1,7 @@
 {
     "num_variables": 10,
     "kl_scaling": 0.3,
-    "learning_rate": 0.0005,
+    "learning_rate": 0.0001,
     "depth": 64,
     "force_uniform_prior": "yes",
     "gradient_clip_val": 5,
