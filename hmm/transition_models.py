@@ -40,9 +40,6 @@ class FactorizedTransition(nn.Module):
         nn.init.xavier_uniform_(self.key_features.data) # necessary to get uniform distribution at init
         nn.init.xavier_uniform_(self.query_features.data) # necessary to get uniform distribution at init
 
-        self.key_module = self.build_module(hidden_dim, layer_dims)
-        self.query_module = self.build_module(hidden_dim, layer_dims)
-        
         if sparse:
             self.bitconverter = BitConverter(bits=num_variables, device='cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -54,9 +51,9 @@ class FactorizedTransition(nn.Module):
         ) -> Tuple[Tensor, Union[Tensor, None]]:
         
         if self.sparse:
-            return sparse_transition(self.state_emb, self.key_features[action], self.query_features[action], self.key_module, self.query_module, state_belief, state_bit_vecs, self.bitconverter)
+            return sparse_transition(self.state_emb, self.key_features[action], self.query_features[action], state_belief, state_bit_vecs, self.bitconverter)
         else:
-            return dense_transition(self.state_emb, self.key_features[action], self.query_features[action], self.key_module, self.query_module, state_belief)
+            return dense_transition(self.state_emb, self.key_features[action], self.query_features[action], state_belief)
     
     @property
     def device(self):
@@ -80,16 +77,11 @@ def dense_transition(
     state_emb: Tensor,
     in_features: Tensor, 
     out_features: Tensor, 
-    in_module: nn.Module, 
-    out_module: nn.Module, 
     state_belief: Tensor,
     ) -> Tuple[Tensor, None]:
     
     out_features = torch.einsum('aij,si->asj', out_features, state_emb)
     in_features = torch.einsum('aij,si->asj', in_features, state_emb)
-    
-    out_features = out_module(out_features)
-    in_features = in_module(in_features)
     
     beliefs = F.softmax(torch.einsum('bsi,bti->bst', out_features, in_features), dim=-1)
     beliefs = torch.einsum('ijk,ij->ik', beliefs, state_belief)
@@ -99,8 +91,6 @@ def sparse_transition(
     state_emb: Tensor,
     in_features: Tensor, 
     out_features: Tensor, 
-    in_module: nn.Module, 
-    out_module: nn.Module, 
     state_belief: Tensor, 
     state_bit_vecs: Tensor, 
     bitconverter: BitConverter, 
@@ -121,10 +111,7 @@ def sparse_transition(
     idcs = bitconverter.bitvec_to_idx(state_bit_vecs)
 
     out_features = torch.einsum('aij,abi->abj', out_features, state_emb[idcs])
-    out_features = out_module(out_features)
-
     in_features = torch.einsum('aij,si->asj', in_features, state_emb)
-    in_features = in_module(in_features)
 
     if batching:
         batch, num_states, emb_dim = in_features.shape
