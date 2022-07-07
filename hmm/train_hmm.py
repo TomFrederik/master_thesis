@@ -69,13 +69,13 @@ def main(
         raise NotImplementedError("Codebook size other than 2 is not supported")
         
     percentages = [percentage] * num_views
-    num_input_channels = len(percentages)
     
     pl.seed_everything(seed, workers=True)
     
     # get data path
     if env_name == 'toy':
         file_name = f"ppo_all_env_experience.npz"
+        # file_name = f"ppo_const_env_experience.npz"
     elif env_name == 'pong':
         file_name = f"pong_data.hdf5"
     else:
@@ -106,7 +106,7 @@ def main(
     
     # emission settings    
     emission_kwargs = dict(
-        num_input_channels=num_input_channels,
+        num_views=num_views,
         codebook_size=codebook_size,
         embedding_dim=embedding_dim,
         num_variables=num_variables,

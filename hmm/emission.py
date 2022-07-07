@@ -98,7 +98,7 @@ class EmissionModel(nn.Module):
 
     def __init__(
         self, 
-        num_input_channels: int,
+        num_views: int,
         embedding_dim: int,
         codebook_size: int,
         num_variables: int,
@@ -109,7 +109,7 @@ class EmissionModel(nn.Module):
         depth: int = 16,
     ):
         super().__init__()
-        self.num_input_channels = num_input_channels
+        self.num_views = num_views
         self.embedding_dim = embedding_dim
         self.codebook_size = codebook_size
         self.num_variables = num_variables
@@ -124,14 +124,16 @@ class EmissionModel(nn.Module):
             scale=scale, 
             kernel_size=kernel_size, 
             depth=depth
-        ) for _ in range(num_input_channels)])
+        ) for _ in range(num_views)])
         self.latent_embedding = nn.Parameter(torch.zeros(num_variables, codebook_size, embedding_dim))
         
-        nn.init.normal_(self.latent_embedding)
+        # init with std = 1/sqrt(input_dim_to_network) = 1/sqrt(embed_dim * num_variables) 
+        nn.init.normal_(self.latent_embedding, mean=0, std=1/(num_variables*embedding_dim)**0.5)
         
         print(self)
         if not sparse:
             self.all_idcs = generate_all_combinations(codebook_size, num_variables)
+        
 
     def forward(
         self, 

@@ -66,17 +66,16 @@ class DiscreteNet(nn.Module):
         obs_logits = self.emission(obs_frame, state_bit_vecs)
         obs_probs = F.softmax(obs_logits, dim=1) # (batch, num_states, num_views)
         posterior = prior
-        for view in range(obs_probs.shape[-1]):
+        # for view in range(obs_probs.shape[-1]):
+        for view in range(2):
             update = obs_probs[...,view] * (1 - dropped)[:, None, view]
             # print(f"update {view}: {update = }")
             nonzeros = torch.sum(update > 1e-6, dim=1)
             # this is a bit hacky but the idea is that the condition evaluates to true if the view is dropped and the update is 0
             # this means that if the view is not dropped (but the update is 0) the posterior is still 0 for that state
-            posterior = torch.where((update + (1-dropped)[:,None,view]) == 0, posterior, update * posterior)
+            posterior = torch.where((update + (1-dropped)[:, None, view]) == 0, posterior, update * posterior)
         
             # I'm not very confident that this is correct so I'll implement it inefficiently
-            # if view != 0:
-            #     continue
             # posterior = posterior * update # this only works because we never use drop out
             # if torch.sum(dropped) > 0:
             #     raise ValueError('re-adapt to dropout > 0')
@@ -260,7 +259,6 @@ class DiscreteNet(nn.Module):
                 #     continue
                 view_loss = ((-(1-dropped)[:,:,None,view] * posterior_belief_sequence * obs_logits_sequence[...,view]).sum(dim=2) * nonterms).sum(dim=-1).mean()
                 recon_loss = recon_loss + view_loss
-                print(f"view {view}: {view_loss = }")
                 
             # recon_loss = ((-(1-dropped)[:,:,None,:] * posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=[2,3]) * nonterms).sum(dim=-1).mean()
         return recon_loss
