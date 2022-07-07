@@ -6,9 +6,7 @@ import time
 from train_hmm import main
 from parsers import create_train_parser
 
-# load default train args
-train_parser: ArgumentParser = create_train_parser()
-train_args = vars(train_parser.parse_args())
+
 
 # parse args for experiment
 parser = ArgumentParser()
@@ -17,6 +15,10 @@ parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/hmm/
 parser.add_argument('--num_seeds_per_run', type=int, default=3)
 parser.add_argument('--job_id', type=int, default=None)
 args = vars(parser.parse_args())
+
+# load default train args
+train_parser: ArgumentParser = create_train_parser()
+train_args = vars(train_parser.parse_args())
 
 print("hparam_dir:", args['hparam_dir'])
 print("Loading best hparams from {}".format(args['best_hparam_file']))
