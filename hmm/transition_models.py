@@ -59,19 +59,6 @@ class FactorizedTransition(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def build_module(self, hidden_dim, layer_dims):
-        net = nn.Sequential()
-        if layer_dims is None:
-            layer_dims = [hidden_dim, hidden_dim]
-        else:
-            layer_dims = [hidden_dim] + layer_dims + [hidden_dim]
-        
-        for i in range(len(layer_dims)-1):
-            net.add_module(f"{i}", nn.Linear(layer_dims[i], layer_dims[i+1]))
-            if i != len(layer_dims)-2:
-                net.add_module(f"{i}_relu", nn.ReLU())
-        return net
-
 
 def dense_transition(
     state_emb: Tensor,
