@@ -6,7 +6,6 @@ import time
 from train_hmm import main
 from parsers import create_train_parser
 
-
 # create parser and add arguments
 train_parser: ArgumentParser = create_train_parser()
 train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout')
