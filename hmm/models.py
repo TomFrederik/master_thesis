@@ -26,6 +26,7 @@ class DiscreteNet(nn.Module):
         l_unroll: int,
         discount_factor: float,
         reward_support,
+        view_masks,
         disable_recon_loss: bool = True,
         sparsemax: bool = False,
         sparsemax_k: int = 30,
@@ -45,6 +46,7 @@ class DiscreteNet(nn.Module):
         self.l_unroll = l_unroll
         self.discount_factor = discount_factor
         self.reward_support = reward_support
+        self.view_masks = view_masks
         self.disable_recon_loss = disable_recon_loss
         self.sparsemax = sparsemax
         self.sparsemax_k = sparsemax_k
@@ -63,7 +65,7 @@ class DiscreteNet(nn.Module):
     #     return F.conv1d(reward_sequence[:,None], self.discount_array[None,None,:])[:,0]
 
     def compute_posterior(self, prior: Tensor, state_bit_vecs: Tensor, obs_frame: Tensor, dropped: Tensor) -> Tuple[Tensor, Tensor]:
-        obs_logits = self.emission(obs_frame, state_bit_vecs)
+        obs_logits = self.emission(obs_frame, state_bit_vecs, self.view_masks)
         obs_probs = F.softmax(obs_logits, dim=1) # (batch, num_states, num_views)
         posterior = prior
         for view in range(obs_probs.shape[-1]):
@@ -251,6 +253,9 @@ class DiscreteNet(nn.Module):
         if not self.disable_recon_loss:
             recon_loss = (-(1-dropped) * (posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=2) * nonterms[...,None]).sum(dim=-1)
             num_non_dropped = (1-dropped).sum(dim=-1)
+            # print(num_non_dropped)
+            # print(f"{recon_loss.shape = }")
+            # raise ValueError
             recon_loss[num_non_dropped > 0] = recon_loss[num_non_dropped > 0] / num_non_dropped[num_non_dropped > 0]
             recon_loss = recon_loss.sum(dim=-1).mean()
         return recon_loss
@@ -321,6 +326,7 @@ class LightningNet(pl.LightningModule):
         weight_decay,
         device,
         reward_support,
+        view_masks,
         disable_recon_loss = False,
         sparsemax = False,
         sparsemax_k = 30,
@@ -362,6 +368,7 @@ class LightningNet(pl.LightningModule):
             l_unroll,
             discount_factor,
             reward_support,
+            view_masks,
             disable_recon_loss,
             sparsemax,
             sparsemax_k,

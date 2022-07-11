@@ -57,6 +57,10 @@ def main(
     wandb_id,
     env_name,
 ):
+    
+    if obs_scale > 1:
+        raise ValueError("obs_scale must be 1 (view masks in emission.forward haven't been scaled yet)")
+    
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
     test_only_dropout = test_only_dropout == 'yes'
@@ -68,8 +72,6 @@ def main(
     if codebook_size != 2:
         raise NotImplementedError("Codebook size other than 2 is not supported")
         
-    percentages = [percentage] * num_views
-    
     pl.seed_everything(seed, workers=True)
     
     # get data path
@@ -86,8 +88,9 @@ def main(
     # init dataset and dataloader
     data_kwargs = dict(
         multiview=num_views > 1,
+        num_views=num_views,
         null_value=null_value,
-        percentages=percentages,
+        percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
         train_val_split=0.9,
@@ -138,6 +141,7 @@ def main(
         weight_decay,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         reward_support=RewardSupport(0,1,num_values),
+        view_masks=train_data.mvwrapper.view_masks,
         disable_recon_loss=disable_recon_loss,
         sparsemax=sparsemax,
         sparsemax_k=sparsemax_k,
@@ -160,7 +164,7 @@ def main(
         weight_decay=weight_decay,
         gradient_clip_val=gradient_clip_val,
         num_views=num_views,
-        percentages=percentages,
+        percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
         disable_recon_loss=disable_recon_loss,
@@ -183,8 +187,8 @@ def main(
     callbacks = []
     callbacks.append(pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True))
     callbacks.append(pl.callbacks.TQDMProgressBar(refresh_rate=1))
-    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=50))
-    callbacks.append(ReconstructionCallback(dataset=train_data, every_n_batches=50))
+    callbacks.append(ExtrapolateCallback(dataset=val_data, every_n_batches=100))
+    callbacks.append(ReconstructionCallback(dataset=train_data, every_n_batches=100))
     
     # set up lightning trainer
     trainer = pl.Trainer(

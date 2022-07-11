@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import Tensor, generate_all_combinations
+from hmm.utils import Tensor, generate_all_combinations
 
 
 ### stolen from dreamer
@@ -36,9 +36,11 @@ class Decoder(nn.Module):
         depth: int = 16, 
         img_shape: Optional[Tuple[int, int]] = None,
         scale: int = 1, 
-        kernel_size: int = 3
+        kernel_size: int = 3,
+        latent_dim_is_total: bool = False,
     ) -> None:
         super().__init__()
+        
         # dreamer
         if img_shape is None:
             img_shape = (7, 7)
@@ -63,7 +65,11 @@ class Decoder(nn.Module):
         self.conv_shape = (2**ctr*d, *conv_shapes[-1])
         self.output_shape = output_shape
         
-        self.linear = nn.Linear(latent_dim*num_vars, np.prod(self.conv_shape).item())
+        if not latent_dim_is_total:
+           latent_dim = num_vars * latent_dim  
+        
+        
+        self.linear = nn.Linear(latent_dim, np.prod(self.conv_shape).item())
 
         transposed_list =[]
         for i in range(ctr):
@@ -72,7 +78,6 @@ class Decoder(nn.Module):
             
 
         self.net = nn.Sequential(
-            layers.Rearrange('b n d -> b (n d)'),
             self.linear,
             layers.Rearrange('b (d h w) -> b d h w', d=self.conv_shape[0], h=self.conv_shape[1], w=self.conv_shape[2]),
             *transposed_list,
@@ -81,6 +86,8 @@ class Decoder(nn.Module):
         
         
     def forward(self, x):
+        if len(x.shape) == 3:
+            x = einops.rearrange(x, 'b n d -> b (n d)')
         out = self.net(x)
         return out
         
@@ -138,17 +145,18 @@ class EmissionModel(nn.Module):
     def forward(
         self, 
         x, 
-        state_bit_vecs: Optional[Tensor] = None
+        state_bit_vecs: Optional[Tensor] = None,
+        view_masks: Tensor = None,
     ) -> Tensor:
         if self.sparse:
             if state_bit_vecs is None:
                 raise ValueError('state_bit_vecs must be provided for sparse model')
             emission_means = self.get_emission_means_sparse(state_bit_vecs[:,None])
-            obs_logits = self.compute_obs_logits_sparse(x, emission_means[:,0])
+            obs_logits = self.compute_obs_logits_sparse(x, emission_means[:,0], view_masks)
         else:
             # assuming a diagonal gaussian with unit variance
             emission_means = self.get_emission_means()
-            obs_logits = self.compute_obs_logits(x, emission_means)
+            obs_logits = self.compute_obs_logits(x, emission_means, view_masks)
         return obs_logits
 
     def get_emission_means_sparse(
@@ -168,14 +176,25 @@ class EmissionModel(nn.Module):
         emission_probs = torch.cat([decoder(z) for decoder in self.decoders], dim=1)
         return emission_probs
         
-    def compute_obs_logits_sparse(self, x, emission_means):
+    def compute_obs_logits_sparse(self, x, emission_means, view_masks):
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
+        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(2)], dim=0)
+        output = - ((emission_means - x[:,None]) ** 2 * view_masks[None, None]).sum(dim=[-2,-1]) / 2
         return output
     
-    def compute_obs_logits(self, x, emission_means):
+    def compute_obs_logits(self, x, emission_means, view_masks):
         #TODO separate channels and views rather than treating them interchangably?
-        output = - ((emission_means[None] - x[:,None]) ** 2).sum(dim=[-2,-1]) / 2
+        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(2)], dim=0)
+        # print(f"{view_masks = }")
+        # print(f"{x = }")
+        # print(f"{emission_means = }")
+        # raise ValueError
+        # print(x[:,None].shape)
+        # print(emission_means[None].shape)
+        # print(view_masks[None,None].shape)
+        output = - ((emission_means[None] - x[:,None]) ** 2 * view_masks[None, None]).sum(dim=[-2,-1]) / 2
+        # print(output.shape)
+        # raise ValueError
         return output
 
     

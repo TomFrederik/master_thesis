@@ -79,7 +79,9 @@ def load_data_h5py(data_path, multiview=False, train_val_split=0.9, **kwargs):
     mean = f['obs'].attrs.get('mean')
     
     if multiview:
-        multiview_wrapper = FunctionalMVW(kwargs['percentages'], kwargs['dropout'], kwargs['null_value'])
+        multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+        # init mvwrapper
+        multiview_wrapper.observation(f['obs'][0])
     else:
         multiview_wrapper = None
         
@@ -100,9 +102,12 @@ def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
     mu = np.mean(obs)
     obs, actions = _split_trajs(dones, action, obs)
     if multiview:
-        multiview_wrapper = FunctionalMVW(kwargs['percentages'], kwargs['dropout'], kwargs['null_value'])
+        multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+        # init mvwrapper
+        multiview_wrapper.observation(obs[0])
     else:
         multiview_wrapper = None
+        
     all_idcs = np.random.permutation(np.arange(len(obs)))
     train_idcs = all_idcs[:int(train_val_split*len(obs))]
     val_idcs = all_idcs[int(train_val_split*len(obs)):]
