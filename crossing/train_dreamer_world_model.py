@@ -14,7 +14,7 @@ from torchvision.utils import make_grid
 sys.path.insert(0, '../')
 from hmm.datasets import construct_toy_train_val_data, construct_pong_train_val_data
 from dreamer_world_model import DreamerWorldModel
-
+from parsers import create_train_parser
 
 class ReconstructionCallback(pl.Callback):
     def __init__(self, dataset, every_n_batches=100) -> None:
@@ -137,7 +137,8 @@ def main(
     kernel_size,
     codebook_size,
     num_variables,
-    
+    wandb_group,
+    wandb_id,
 ):
     
     test_only_dropout = test_only_dropout == 'yes'
@@ -224,7 +225,7 @@ def main(
         gradient_clip_val=gradient_clip_val,
         max_len=max_len,
     )
-    wandb_kwargs = dict(project="MT-ToyTask-Dreamer", config=wandb_config)
+    wandb_kwargs = dict(project="MT-ToyTask-Dreamer", config=wandb_config, group=wandb_group, id=wandb_id)
     logger = WandbLogger(**wandb_kwargs)
     
     # callbacks
@@ -247,35 +248,7 @@ def main(
     trainer.fit(model, train_loader, val_loader)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    
-    # env settings
-    parser.add_argument('--num_seeds', type=int, default=None)
-    parser.add_argument('--num_views', type=int, default=1)
-    parser.add_argument('--null_value', type=int, default=1)
-    parser.add_argument('--percentage', type=float, default=1)
-    parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--test_only_dropout', type=str, default='no', choices=['yes', 'no'])
-    parser.add_argument('--max_datapoints', type=int, default=None)
-    
-    ## model args
-    parser.add_argument('--kl_scaling', type=float, default=0.1)
-    parser.add_argument('--kl_balancing_coeff', type=float, default=0.8)
-    parser.add_argument('--discount_factor', type=float, default=0.99)
-    parser.add_argument('--kernel_size', type=int, default=3, help="Size of the conv kernel")
-    parser.add_argument('--depth', type=int, default=16, help="Scaling parameter for conv net")
-    parser.add_argument('--num_variables', type=int, default=32)
-    parser.add_argument('--codebook_size', type=int, default=32)
-    
-    # training args
-    parser.add_argument('--gradient_clip_val', type=float, default=0)
-    parser.add_argument('--learning_rate', type=float, default=0.0002)
-    parser.add_argument('--weight_decay', type=float, default=0.000001)
-    parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--num_workers', type=int, default=0)
-    parser.add_argument('--num_epochs', type=int, default=10)
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--max_len', type=int, default=10, help='Max length of an episode for batching purposes. Rest will be padded.')
+    parser = create_train_parser()
     
     args = parser.parse_args()
     
