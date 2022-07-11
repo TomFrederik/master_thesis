@@ -9,7 +9,7 @@ from parsers import create_train_parser
 # create parser and add arguments
 train_parser: ArgumentParser = create_train_parser()
 train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/dreamer/perc_dropout')
-train_parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/dreamer/best_hparams_dense.json')
+train_parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/dreamer/best_hparams.json')
 train_parser.add_argument('--num_seeds_per_run', type=int, default=3)
 train_parser.add_argument('--job_id', type=int, default=None)
 train_args = vars(train_parser.parse_args())

@@ -102,6 +102,7 @@ def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
     mu = np.mean(obs)
     obs, actions = _split_trajs(dones, action, obs)
     if multiview:
+        print(kwargs)
         multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
         # init mvwrapper
         multiview_wrapper.observation(obs[0])

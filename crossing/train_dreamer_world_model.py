@@ -141,6 +141,8 @@ def main(
     wandb_id,
 ):
     
+    print('hi')
+    
     test_only_dropout = test_only_dropout == 'yes'
     
     
@@ -148,11 +150,12 @@ def main(
     data_kwargs = dict(
         multiview=num_views > 1,
         null_value=null_value,
-        percentages=[percentage]*num_views,
+        percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
         max_datapoints=max_datapoints,
         max_len=max_len,
+        num_views=num_views,
     )
     
     pl.seed_everything(seed)
@@ -166,6 +169,7 @@ def main(
     # init dataset and dataloader
     train_val_split = 0.9
     train_data, val_data = data_cls(data_path, train_val_split=train_val_split, **data_kwargs)
+    print('ho')
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
