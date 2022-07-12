@@ -72,18 +72,15 @@ def _extract_transition_tuples(dones, action, obs):
     # val_data = TransitionData(val_transitions, sigma, mu, mvwrapper, drop=True)
     # return train_data, val_data
 
-def load_data_h5py(data_path, multiview=False, train_val_split=0.9, **kwargs):
+def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     f = h5py.File(data_path, 'r')
     
     std = f['obs'].attrs.get('std')
     mean = f['obs'].attrs.get('mean')
     
-    if multiview:
-        multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
-        # init mvwrapper
-        multiview_wrapper.observation(f['obs'][0])
-    else:
-        multiview_wrapper = None
+    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+    # init mvwrapper
+    multiview_wrapper.observation(f['obs'][0])
         
     all_idcs = np.random.permutation(np.arange(len(f['obs'])))
     train_idcs = all_idcs[:int(train_val_split*len(f['obs']))]
@@ -93,7 +90,7 @@ def load_data_h5py(data_path, multiview=False, train_val_split=0.9, **kwargs):
     
     return train_idcs, val_idcs, std, mean, multiview_wrapper
 
-def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
+def load_data(data_path, train_val_split=0.9, **kwargs):
     data = np.load(data_path)
     dones = data['done']
     obs = data['obs']
@@ -101,13 +98,10 @@ def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
     sigma = np.std(obs)
     mu = np.mean(obs)
     obs, actions = _split_trajs(dones, action, obs)
-    if multiview:
-        print(kwargs)
-        multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
-        # init mvwrapper
-        multiview_wrapper.observation(obs[0])
-    else:
-        multiview_wrapper = None
+
+    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+    # init mvwrapper
+    multiview_wrapper.observation(obs[0])
         
     all_idcs = np.random.permutation(np.arange(len(obs)))
     train_idcs = all_idcs[:int(train_val_split*len(obs))]
@@ -115,16 +109,16 @@ def load_data(data_path, multiview=False, train_val_split=0.9, **kwargs):
     
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
-def construct_pong_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
-    train_idcs, val_idcs, sigma, mu, mvwrapper = load_data_h5py(data_path, multiview, train_val_split, **kwargs)
+def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
+    train_idcs, val_idcs, sigma, mu, mvwrapper = load_data_h5py(data_path, train_val_split, **kwargs)
     train_data = PongBatchTrajToyData(data_path, train_idcs, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
     val_data = PongBatchTrajToyData(data_path, val_idcs, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
     return train_data, val_data
 
 
 
-def construct_toy_train_val_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
-    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, **kwargs)
+def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
+    (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, train_val_split, **kwargs)
     train_data = ToyBatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
     val_data = ToyBatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
     return train_data, val_data

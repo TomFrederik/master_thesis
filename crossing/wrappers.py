@@ -151,8 +151,11 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         if dropout < 0 or dropout >= 1:
             raise ValueError("dropout must be a value in [0,1)")
 
-        if num_views != 2:
-            raise ValueError("num_views must be 2")
+        if num_views not in [1,2]:
+            raise ValueError(f"num_views must be in [1,2] but is {num_views}")
+        
+        if num_views == 1 and percentage != 1:
+            raise ValueError(f"percentage must be 1 when num_views is 1")
         
         self.percentage = percentage
         self.num_views = num_views
@@ -190,7 +193,12 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         # lower-left: 2
         # lower-right: 3
         
+        
         self.null_mask = np.zeros(observation.shape) + self.null_value
+        
+        if self.num_views == 1:
+            self.view_masks = {0: np.ones_like(observation)}
+            return
         
         half_height = observation.shape[0] // 2
         half_width = observation.shape[1] // 2
