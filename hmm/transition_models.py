@@ -70,7 +70,7 @@ def dense_transition(
     out_features = torch.einsum('aij,si->asj', out_features, state_emb)
     in_features = torch.einsum('aij,si->asj', in_features, state_emb)
     
-    beliefs = F.softmax(torch.einsum('bsi,bti->bst', out_features, in_features), dim=-1)
+    beliefs = F.softmax(torch.einsum('bsi,bti->bst', out_features, in_features) / (out_features.shape[-1] ** 0.5), dim=-1)
     beliefs = torch.einsum('ijk,ij->ik', beliefs, state_belief)
     return beliefs, None
 
@@ -109,7 +109,7 @@ def sparse_transition(
         beliefs = F.softmax(beliefs, dim=-1)
         beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
     else:
-        beliefs = F.softmax(torch.einsum('abd,acd->abc', out_features, in_features), dim=-1)
+        beliefs = F.softmax(torch.einsum('abd,acd->abc', out_features, in_features)/ (out_features.shape[-1] ** 0.5), dim=-1)
         beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
 
     values, indices = torch.topk(beliefs.log(), k=k, dim=dim)
