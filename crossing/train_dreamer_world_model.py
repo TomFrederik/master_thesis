@@ -141,7 +141,6 @@ def main(
     wandb_id,
 ):
     
-    print('hi')
     
     test_only_dropout = test_only_dropout == 'yes'
     
@@ -169,7 +168,6 @@ def main(
     # init dataset and dataloader
     train_val_split = 0.9
     train_data, val_data = data_cls(data_path, train_val_split=train_val_split, **data_kwargs)
-    print('ho')
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
