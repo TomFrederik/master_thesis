@@ -53,7 +53,7 @@ class DiscreteNet(nn.Module):
         self.kl_scaling = kl_scaling
         self.force_uniform_prior = force_uniform_prior
         
-        self.recon_normalizer = nn.Parameter(data=torch.stack([torch.from_numpy(view_masks[i]) for i in range(2)], dim=0).sum(dim=[1,2]), requires_grad=False)
+        self.recon_normalizer = nn.Parameter(data=torch.stack([torch.from_numpy(view_masks[i]) for i in range(len(view_masks))], dim=0).sum(dim=[1,2]), requires_grad=False)
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
         
