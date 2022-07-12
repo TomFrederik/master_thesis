@@ -178,13 +178,13 @@ class EmissionModel(nn.Module):
         
     def compute_obs_logits_sparse(self, x, emission_means, view_masks):
         #TODO separate channels and views rather than treating them interchangably?
-        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(2)], dim=0)
+        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(len(view_masks))], dim=0)
         output = - ((emission_means - x[:,None]) ** 2 * view_masks[None, None]).sum(dim=[-2,-1]) / 2
         return output
     
     def compute_obs_logits(self, x, emission_means, view_masks):
         #TODO separate channels and views rather than treating them interchangably?
-        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(2)], dim=0)
+        view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(len(view_masks))], dim=0)
         # print(f"{view_masks = }")
         # print(f"{x = }")
         # print(f"{emission_means = }")

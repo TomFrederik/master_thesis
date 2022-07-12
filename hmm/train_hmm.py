@@ -87,7 +87,6 @@ def main(
     
     # init dataset and dataloader
     data_kwargs = dict(
-        multiview=num_views > 1,
         num_views=num_views,
         null_value=null_value,
         percentage=percentage,
