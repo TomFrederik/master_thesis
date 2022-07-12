@@ -52,6 +52,8 @@ class DiscreteNet(nn.Module):
         self.sparsemax_k = sparsemax_k
         self.kl_scaling = kl_scaling
         self.force_uniform_prior = force_uniform_prior
+        
+        self.recon_normalizer = nn.Parameter(data=torch.stack([torch.from_numpy(view_masks[i]) for i in range(2)], dim=0).sum(dim=[1,2]), requires_grad=False)
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
         
@@ -128,10 +130,9 @@ class DiscreteNet(nn.Module):
 
         # pull posterior and prior closer together
         prior_loss = kl_balancing_loss(self.kl_balancing_coeff, state_belief, posterior_0, nonterms[:,0])
-        state_belief = posterior_0
 
         # dynamics
-        posterior_belief_sequence, posterior_bit_vec_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss = self.process_sequence(
+        posterior_belief_sequence, posterior_bit_vec_sequence, prior_belief_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss = self.process_sequence(
             action_sequence, 
             dropped, 
             posterior_0, 
@@ -140,11 +141,15 @@ class DiscreteNet(nn.Module):
             nonterms,
             player_pos,
         )
+        prior_belief_sequence = torch.cat([state_belief[:,None], prior_belief_sequence], dim=1)
         
         obs_logits_sequence = torch.cat([obs_logits_0[:,None], obs_logits_sequence], dim=1)
 
+        # print()
+        # print(torch.var(posterior_belief_sequence, dim=-1))
+
         # compute losses
-        recon_loss = self.compute_recon_loss(posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped, nonterms)
+        recon_loss = self.compute_recon_loss(posterior_belief_sequence, obs_logits_sequence, dropped, nonterms)
         
         # print(f"{recon_loss = }")
         if not self.disable_vp:
@@ -154,7 +159,7 @@ class DiscreteNet(nn.Module):
         
         outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
         outputs['value_prefix_loss'] = value_prefix_loss 
-        outputs['recon_loss'] = recon_loss / dimension
+        outputs['recon_loss'] = recon_loss
         outputs["dyn_loss"] = self.kl_scaling * dyn_loss / self.l_unroll
         outputs['prior_entropy'] = (prior_entropy + sum(prior_entropies))/(len(prior_entropies) + 1)
         outputs['posterior_entropy'] = (posterior_entropy + sum(posterior_entropies))/(len(posterior_entropies) + 1)
@@ -188,6 +193,7 @@ class DiscreteNet(nn.Module):
         obs_logits_sequence = []
         prior_entropies = []
         posterior_entropies = []
+        prior_belief_sequence = []
         
         if self.l_unroll > 1:
             raise ValueError("l_unroll > 1 not implemented -> posterior update will not work as intended, also value prefix is not gonna work")
@@ -216,6 +222,7 @@ class DiscreteNet(nn.Module):
             posterior_belief_sequence.append(state_belief_posterior)
             posterior_bit_vecs_sequence.append(state_bit_vecs)
             obs_logits_sequence.append(obs_logits)
+            prior_belief_sequence.append(prior)
             if nonterms[:,t].sum() > 0:
                 prior_entropies.append((discrete_entropy(prior) * nonterms[:,t]).sum() / nonterms[:,t].sum())
                 posterior_entropies.append((discrete_entropy(state_belief_posterior) * nonterms[:,t]).sum() / nonterms[:,t].sum())
@@ -234,6 +241,7 @@ class DiscreteNet(nn.Module):
         # stack along time dimension
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)
         posterior_belief_sequence = torch.stack(posterior_belief_sequence, dim=1)
+        prior_belief_sequence = torch.stack(prior_belief_sequence, dim=1)
         if posterior_bit_vecs_sequence[-1] is not None:
             posterior_bit_vecs_sequence = torch.stack(posterior_bit_vecs_sequence, dim=1)
         else:
@@ -243,15 +251,20 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_pred = None
         
-        return posterior_belief_sequence, posterior_bit_vecs_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss
+        return posterior_belief_sequence, posterior_bit_vecs_sequence, prior_belief_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss
 
-    def compute_recon_loss(self, posterior_belief_sequence, posterior_bit_vec_sequence, obs_logits_sequence, dropped, nonterms):
+    def compute_recon_loss(self, posterior_belief_sequence, obs_logits_sequence, dropped, nonterms):
         # posterior_belief_sequence has shape (batch, seq_len, num_states)
         # obs_logits_sequence has shape (batch, seq_len, num_active_state, num_views)
         # dropped has shape (batch, seq_len, num_views)
         recon_loss = 0
+        # print()
+        # print(torch.var(prior_belief_sequence, dim=-1))
+        # print()
         if not self.disable_recon_loss:
-            recon_loss = (-(1-dropped) * (posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=2) * nonterms[...,None]).sum(dim=-1)
+            recon_loss = (-(1-dropped) * (posterior_belief_sequence[...,None] * obs_logits_sequence).sum(dim=2) * nonterms[...,None])
+            recon_loss = recon_loss / self.recon_normalizer[None,None]
+            recon_loss = recon_loss.sum(dim=-1)
             num_non_dropped = (1-dropped).sum(dim=-1)
             # print(num_non_dropped)
             # print(f"{recon_loss.shape = }")
