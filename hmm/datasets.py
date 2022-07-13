@@ -80,7 +80,7 @@ def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     
     multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
     # init mvwrapper
-    multiview_wrapper.observation(f['obs'][0])
+    multiview_wrapper.observation(f['obs']["traj_0"])
         
     all_idcs = np.random.permutation(np.arange(len(f['obs'])))
     train_idcs = all_idcs[:int(train_val_split*len(f['obs']))]
@@ -109,82 +109,23 @@ def load_data(data_path, train_val_split=0.9, **kwargs):
     
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
-def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
+def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, get_player_pos=False, **kwargs):
     train_idcs, val_idcs, sigma, mu, mvwrapper = load_data_h5py(data_path, train_val_split, **kwargs)
-    train_data = PongBatchTrajToyData(data_path, train_idcs, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
-    val_data = PongBatchTrajToyData(data_path, val_idcs, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
+    train_data = PongBatchTrajToyData(data_path, train_idcs, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
+    val_data = PongBatchTrajToyData(data_path, val_idcs, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
     return train_data, val_data
 
 
 
-def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, **kwargs):
+def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, get_player_pos=False, **kwargs):
     (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, train_val_split, **kwargs)
-    train_data = ToyBatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale)
-    val_data = ToyBatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale)
+    train_data = ToyBatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
+    val_data = ToyBatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
     return train_data, val_data
 
-
-class TransitionData(Dataset):
-    def __init__(self, transitions, sigma, mu, mvwrapper, drop) -> None:
-        super().__init__()
-        self.transitions = transitions
-        self.sigma = sigma
-        self.mu = mu
-        self.mvwrapper = mvwrapper
-        self.drop = drop
-    
-    def set_drop(self, drop: bool):
-        self.drop = drop
-    
-    def __len__(self):
-        return len(self.transitions)
-    
-    def get_no_drop(self, idx):
-        return self.__getitem__(idx, force_no_drop=True)
-    
-    def __getitem__(self, idx, force_no_drop=False):
-        transition: Transition = self.transitions[idx]
-        
-        print(transition)
-        print(transition.state.shape)
-        if self.mvwrapper: # stack views along channel dimension
-            output = self.mvwrapper.observation(transition.state, (force_no_drop or not self.drop)) 
-            state = output['views']
-            dropped = output['dropped']
-            print(dropped)
-            state = np.stack([o for key, o in state.items() if key.startswith('view')], axis=1) 
-        else:
-            state = state[:,None]
-            dropped = np.zeros(1)
-        
-        # center and normalize
-        state = (state - self.mu) / self.sigma
-        next_state = (transition.next_state - self.mu) / self.sigma
-        
-        action = transition.action
-        
-        vp = transition.value_prefix
-
-        return Transition(
-            state.astype(np.float32),
-            action.astype(np.int64),
-            next_state.astype(np.float32),
-            float(vp),
-            float(dropped),
-        )
-    
-    @staticmethod
-    def collate_fn(batch):
-        state = torch.stack([torch.from_numpy(item[0]) for item in batch])
-        actions = torch.stack([torch.from_numpy(item[1]) for item in batch])
-        next_state = torch.stack([torch.from_numpy(item[2]) for item in batch])
-        vp = torch.stack([torch.from_numpy(item[3]) for item in batch])
-        dropped = torch.stack([torch.from_numpy(item[4]) for item in batch])
-        return Transition(state, actions, next_state, vp, dropped)
-    
 
 class ToyBatchTrajToyData(Dataset):
-    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, max_len=-1, scale=1):
+    def __init__(self, obs, actions, sigma, mu, mvwrapper, drop, max_len=-1, scale=1, get_player_pos=False):
         self.obs = obs
         self.actions = actions
         self.sigma = sigma
@@ -193,6 +134,7 @@ class ToyBatchTrajToyData(Dataset):
         self.mvwrapper = mvwrapper
         self.max_len = max_len
         self.scale = scale
+        self.get_player_pos = get_player_pos
         self.img_shape = self.obs[0].shape[-2:]
     
     def set_drop(self, drop: bool):
@@ -241,8 +183,12 @@ class ToyBatchTrajToyData(Dataset):
         # scale up
         obs = scale_obs(obs, self.scale)
         
-        player_pos = np.zeros_like(obs)
-        player_pos[obs == 0] = 1
+        if self.get_player_pos:
+                player_pos = np.zeros_like(obs)
+                player_pos[obs == 0] = 1
+                player_pos = player_pos.astype(np.float32)
+        else:
+            player_pos = np.array([0])
         
         # center and normalize
         obs = (obs - self.mu) / self.sigma
@@ -260,11 +206,11 @@ class ToyBatchTrajToyData(Dataset):
             value_prefixes.astype(np.float32),
             nonterms.astype(np.int64), #terms
             dropped.astype(np.float32),
-            player_pos.astype(np.float32),
+            player_pos,
         )
         
 class PongBatchTrajToyData(Dataset):
-    def __init__(self, data_path, idcs, sigma, mu, mvwrapper, drop, max_len=-1, scale=1):
+    def __init__(self, data_path, idcs, sigma, mu, mvwrapper, drop, max_len=-1, scale=1, get_player_pos=False):
         self.data_path = data_path
         self.idcs = idcs
         self.sigma = sigma
@@ -273,6 +219,7 @@ class PongBatchTrajToyData(Dataset):
         self.mvwrapper = mvwrapper
         self.max_len = max_len
         self.scale = scale
+        self.get_player_pos = get_player_pos
         with h5py.File(data_path, 'r') as f:
             self.img_shape = f['obs'][f'traj_{self.idcs[0]}'].shape[-2:]
         
@@ -306,10 +253,9 @@ class PongBatchTrajToyData(Dataset):
             pad_length = max(0, max_len + start_idx - traj_length)
             
             # retrieve and pad actions
-            action = action[start_idx:start_idx+max_len]
+            action = action[start_idx:start_idx+max_len+1]
             action = np.append(action, np.zeros(pad_length))
             # add null action since we did not record action at last step
-            action = np.append(action, np.zeros_like(action[-1]))
 
             # retrieve and pad observations
             obs = obs[start_idx:start_idx+max_len+1]
@@ -325,9 +271,13 @@ class PongBatchTrajToyData(Dataset):
             # scale up
             obs = scale_obs(obs, self.scale)
             
-            player_pos = np.zeros_like(obs)
-            player_pos[obs == 0] = 1
-            
+            if self.get_player_pos:
+                player_pos = np.zeros_like(obs)
+                player_pos[obs == 0] = 1
+                player_pos = player_pos.astype(np.float32)
+            else:
+                player_pos = np.array([0])
+                
             # center and normalize
             obs = (obs - self.mu) / self.sigma
             
@@ -335,7 +285,9 @@ class PongBatchTrajToyData(Dataset):
             if pad_length > 0:
                 nonterms[-pad_length:] = 0
 
-            value_prefixes = reward[start_idx:start_idx+max_len+1,0]
+            value_prefixes = np.zeros_like(action)
+            rew = reward[start_idx:start_idx+max_len+1,0] # have to do it like that to deal with cut-off episodes
+            value_prefixes[:len(rew)] = rew 
             # value_prefixes = np.zeros_like(action)
             # if max_len + start_idx - traj_length >= 0:
             #     value_prefixes[-(max_len + start_idx - traj_length + 1):] = 1
@@ -345,10 +297,12 @@ class PongBatchTrajToyData(Dataset):
             value_prefixes.astype(np.float32),
             nonterms.astype(np.int64), #terms
             dropped.astype(np.float32),
-            player_pos.astype(np.float32),
+            player_pos,
         )
         
 def scale_obs(obs, scale):
+    if scale == 1:
+        return obs
     h, w = obs.shape[-2:]
     new_h, new_w = int(h * scale), int(w * scale)
     new_obs = np.zeros((*obs.shape[:-2], new_h, new_w))

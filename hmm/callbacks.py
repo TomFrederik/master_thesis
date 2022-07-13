@@ -15,7 +15,10 @@ class ReconstructionCallback(pl.Callback):
         obs, actions, vp, nonterms, dropped, player_pos = dataset.get_no_drop(0)
         self.obs = torch.from_numpy(obs[None])
         self.actions = torch.from_numpy(actions[None])
-        self.player_pos = torch.from_numpy(player_pos[None])
+        if player_pos is not None:
+            self.player_pos = torch.from_numpy(player_pos[None])
+        else:
+            self.player_pos = None
         self.nonterms = torch.from_numpy(nonterms[None])
         self.value_prefixes = torch.from_numpy(vp[None])
         self.dropped = torch.from_numpy(dropped[None])
@@ -32,7 +35,8 @@ class ReconstructionCallback(pl.Callback):
             self.obs = self.obs.to(pl_module.device)
             self.actions = self.actions.to(pl_module.device)
             self.dropped = self.dropped.to(pl_module.device)
-            self.player_pos = self.player_pos.to(pl_module.device)
+            if self.player_pos is not None:
+                self.player_pos = self.player_pos.to(pl_module.device)
             self.nonterms = self.nonterms.to(pl_module.device)
             self.value_prefixes = self.value_prefixes.to(pl_module.device)
 

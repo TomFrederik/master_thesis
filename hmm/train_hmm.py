@@ -56,6 +56,7 @@ def main(
     wandb_group,
     wandb_id,
     env_name,
+    get_player_pos,
 ):
     
     if obs_scale > 1:
@@ -96,6 +97,7 @@ def main(
         batch_size=batch_size,
         max_len=max_len,
         scale=obs_scale,
+        get_player_pos=get_player_pos,
     )
     
     if env_name == 'toy':
@@ -180,7 +182,10 @@ def main(
         kernel_size=kernel_size,
         depth=depth,
     )
-    logger = WandbLogger(project="MT-ToyTask-Ours", config=wandb_config, group=wandb_group, id=wandb_id)
+    
+    wandb_proj = "ToyTask" if env_name == 'toy' else "Pong"
+    
+    logger = WandbLogger(project=f"MT-{wandb_proj}-Ours", config=wandb_config, group=wandb_group, id=wandb_id)
     
     # callbacks
     callbacks = []

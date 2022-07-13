@@ -42,6 +42,7 @@ def create_train_parser():
     parser.add_argument('--gradient_clip_val', type=float, default=0)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--detect_anomaly', action='store_true')
+    parser.add_argument('--get_player_pos', action='store_true')
     parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--wandb_id', type=str, default=None)
     parser.add_argument('--track_grad_norm', type=int, default=-1)
