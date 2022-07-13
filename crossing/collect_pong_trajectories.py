@@ -14,7 +14,7 @@ def main(
     num_trajectories,
 ):
 
-    f = h5py.File('pong_data.hdf5', 'w') # change this to 'a' to prevent overwrite?
+    f = h5py.File('../pong_data.hdf5', 'w') # change this to 'a' to prevent overwrite?
     f.create_group('done')
     f.create_group('obs')
     f.create_group('action')
