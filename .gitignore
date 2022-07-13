@@ -140,6 +140,7 @@ crossing/MT-ToyTask-Dreamer
 Crossing-dVAE/
 MT-ToyTask-Ours/
 hmm/MT-ToyTask-Ours
+hmm/MT-Pong-Ours
 hmm/wandb
 
 # data
