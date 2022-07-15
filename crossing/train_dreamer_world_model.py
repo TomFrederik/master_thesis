@@ -119,7 +119,6 @@ class ExtrapolateCallback(pl.Callback):
         pl_module.logger.experiment.log({'Extrapolation': wandb.Image(make_grid(images, nrow=2*num_views))})
 
 def main(
-    num_seeds,
     num_views,
     null_value,
     percentage,
@@ -134,7 +133,6 @@ def main(
     num_workers,
     seed,
     test_only_dropout,
-    max_datapoints,
     max_len,
     gradient_clip_val,
     depth,
@@ -143,6 +141,7 @@ def main(
     num_variables,
     wandb_group,
     wandb_id,
+    obs_scale,
 ):
     
     
@@ -151,27 +150,28 @@ def main(
     
     data_cls = construct_toy_train_val_data
     data_kwargs = dict(
-        multiview=num_views > 1,
+        num_views=num_views,
         null_value=null_value,
         percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
-        max_datapoints=max_datapoints,
+        train_val_split=0.9,
+        batch_size=batch_size,
         max_len=max_len,
-        num_views=num_views,
+        scale=obs_scale,
+        get_player_pos=False,
     )
     
     pl.seed_everything(seed)
     
     # get data path
-    suffix = 'all' if num_seeds is None else str(num_seeds)
-    file_name = f"ppo_{suffix}_env_experience.npz"
+    file_name = f"ppo_all_env_experience.npz"
     data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(data_path, file_name)
     
     # init dataset and dataloader
     train_val_split = 0.9
-    train_data, val_data = data_cls(data_path, train_val_split=train_val_split, **data_kwargs)
+    train_data, val_data = data_cls(data_path, **data_kwargs)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
@@ -218,7 +218,6 @@ def main(
     # set up wandb
     wandb_config = dict(
         seed=seed,
-        num_seeds=num_seeds,
         kl_balancing_coeff=kl_balancing_coeff,
         kl_scaling=kl_scaling,
         learning_rate=learning_rate,
@@ -226,7 +225,6 @@ def main(
         percentages=[percentage]*num_views,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
-        max_datapoints=max_datapoints,
         weight_decay=weight_decay,
         gradient_clip_val=gradient_clip_val,
         max_len=max_len,

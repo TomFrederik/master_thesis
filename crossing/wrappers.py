@@ -232,7 +232,7 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
             view_to_quadrants[1] = shuffled_idcs.copy()
 
         self.view_masks = {
-            i: np.sum(np.stack([quadrant_masks[x] for x in view_to_quadrants[i]], axis=0), axis=0) for i in range(self.num_views).astype(np.float32)
+            i: np.sum(np.stack([quadrant_masks[x] for x in view_to_quadrants[i]], axis=0), axis=0).astype(np.float32) for i in range(self.num_views)
         }
         
         

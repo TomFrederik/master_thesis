@@ -96,7 +96,7 @@ def main(
         scale=obs_scale,
         get_player_pos=get_player_pos,
     )
-    print(data_kwargs)
+
     if env_name == 'toy':
         train_data, val_data = construct_toy_train_val_data(data_path, **data_kwargs)
     elif env_name == 'pong':
@@ -214,6 +214,7 @@ def main(
 if __name__ == '__main__':
     parser = create_train_parser()
     args = parser.parse_args()
-    
+    print(vars(args))
+    # raise ValueError("This is a script to be run in the notebook.")
     main(**vars(args))
     

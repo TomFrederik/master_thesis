@@ -8,7 +8,7 @@ from parsers import create_train_parser
 
 # create parser and add arguments
 train_parser: ArgumentParser = create_train_parser()
-train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout')
+train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/hmm/perc_dropout/job_0')
 train_parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/hmm/best_hparams_dense.json')
 train_parser.add_argument('--num_seeds_per_run', type=int, default=3)
 train_parser.add_argument('--job_id', type=int, default=None)
@@ -55,6 +55,7 @@ for i, file in enumerate(os.listdir(args['hparam_dir'])):
         run_args.update({"seed": seed, "wandb_id": f"setting_{setting_id}_seed_{seed}_job_{job_id}"})
         
         print(f"Setting ID = {setting_id}, Running with hparams: {hparams}, seed: {seed}")
+        print(run_args)
         try:
             main(**run_args)
         except Exception as e:
