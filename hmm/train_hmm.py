@@ -59,9 +59,6 @@ def main(
     get_player_pos,
 ):
     
-    if obs_scale > 1:
-        raise ValueError("obs_scale must be 1 (view masks in emission.forward haven't been scaled yet)")
-    
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
     sparsemax = sparsemax == 'yes'
     test_only_dropout = test_only_dropout == 'yes'
@@ -99,7 +96,7 @@ def main(
         scale=obs_scale,
         get_player_pos=get_player_pos,
     )
-    
+    print(data_kwargs)
     if env_name == 'toy':
         train_data, val_data = construct_toy_train_val_data(data_path, **data_kwargs)
     elif env_name == 'pong':

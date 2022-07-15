@@ -167,7 +167,7 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         if not self.initialized:
             self._init_views(observation[0]) # only use the first observation of the trajectory
             self.initialized = True
-
+        
         output = self._construct_views(observation, force_no_drop)
 
         # ### TESTING HALF-HALF Split
@@ -186,7 +186,6 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         return output
 
     def _init_views(self, observation) -> Dict:
-        
         # assign each location to a quadrant
         # upper-left: 0
         # upper-right: 1
@@ -197,7 +196,7 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         self.null_mask = np.zeros(observation.shape) + self.null_value
         
         if self.num_views == 1:
-            self.view_masks = {0: np.ones_like(observation)}
+            self.view_masks = {0: np.ones_like(observation).astype(np.float32)}
             return
         
         half_height = observation.shape[0] // 2
@@ -233,8 +232,9 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
             view_to_quadrants[1] = shuffled_idcs.copy()
 
         self.view_masks = {
-            i: np.sum(np.stack([quadrant_masks[x] for x in view_to_quadrants[i]], axis=0), axis=0) for i in range(self.num_views)
+            i: np.sum(np.stack([quadrant_masks[x] for x in view_to_quadrants[i]], axis=0), axis=0) for i in range(self.num_views).astype(np.float32)
         }
+        
         
     def _construct_views(self, observation:np.ndarray, force_no_drop: Optional[bool] = False) -> Dict:
         

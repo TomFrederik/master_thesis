@@ -75,6 +75,7 @@ class Decoder(nn.Module):
         for i in range(ctr):
             transposed_list.append(nn.ConvTranspose2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, k, 2, output_padding=output_paddings[i]))
             transposed_list.append(nn.ELU(alpha=1.0))
+            # transposed_list.append(nn.ReLU())
             
 
         self.net = nn.Sequential(
@@ -82,6 +83,7 @@ class Decoder(nn.Module):
             layers.Rearrange('b (d h w) -> b d h w', d=self.conv_shape[0], h=self.conv_shape[1], w=self.conv_shape[2]),
             *transposed_list,
             nn.ConvTranspose2d(d, output_channels, k, 2, output_padding=output_paddings[-1]),
+            # nn.Conv2d(output_channels, output_channels, 1, 1),
         )
         
         
@@ -183,8 +185,10 @@ class EmissionModel(nn.Module):
         return output
     
     def compute_obs_logits(self, x, emission_means, view_masks):
+            
         #TODO separate channels and views rather than treating them interchangably?
         view_masks = torch.stack([torch.from_numpy(view_masks[i]).to(self.device) for i in range(len(view_masks))], dim=0)
+
         # print(f"{view_masks = }")
         # print(f"{x = }")
         # print(f"{emission_means = }")

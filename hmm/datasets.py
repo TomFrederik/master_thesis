@@ -80,7 +80,7 @@ def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     
     multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
     # init mvwrapper
-    multiview_wrapper.observation(f['obs']["traj_0"])
+    multiview_wrapper.observation(scale_obs(f['obs']["traj_0"]), kwargs['scale'])
         
     all_idcs = np.random.permutation(np.arange(len(f['obs'])))
     train_idcs = all_idcs[:int(train_val_split*len(f['obs']))]
@@ -101,7 +101,7 @@ def load_data(data_path, train_val_split=0.9, **kwargs):
 
     multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
     # init mvwrapper
-    multiview_wrapper.observation(obs[0])
+    multiview_wrapper.observation(scale_obs(obs[0], kwargs['scale']))
         
     all_idcs = np.random.permutation(np.arange(len(obs)))
     train_idcs = all_idcs[:int(train_val_split*len(obs))]
@@ -109,18 +109,29 @@ def load_data(data_path, train_val_split=0.9, **kwargs):
     
     return (obs[train_idcs], actions[train_idcs]), (obs[val_idcs], actions[val_idcs]), sigma, mu, multiview_wrapper
 
-def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, get_player_pos=False, **kwargs):
+def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, get_player_pos=False, **kwargs):
     train_idcs, val_idcs, sigma, mu, mvwrapper = load_data_h5py(data_path, train_val_split, **kwargs)
-    train_data = PongBatchTrajToyData(data_path, train_idcs, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
-    val_data = PongBatchTrajToyData(data_path, val_idcs, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
+    del kwargs['num_views']
+    del kwargs['null_value']
+    del kwargs['percentage']
+    del kwargs['dropout']
+    del kwargs['batch_size']
+    train_data = PongBatchTrajToyData(data_path, train_idcs, sigma, mu, mvwrapper, drop=not test_only_dropout, get_player_pos=get_player_pos, **kwargs)
+    val_data = PongBatchTrajToyData(data_path, val_idcs, sigma, mu, mvwrapper, drop=True, get_player_pos=get_player_pos, **kwargs)
     return train_data, val_data
 
 
 
-def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, scale=1.0, get_player_pos=False, **kwargs):
+def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, get_player_pos=False, **kwargs):
     (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, train_val_split, **kwargs)
-    train_data = ToyBatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
-    val_data = ToyBatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, max_len=kwargs['max_len'], scale=scale, get_player_pos=get_player_pos)
+    # argh, this is awful style --> #TODO fix if have time
+    del kwargs['num_views']
+    del kwargs['null_value']
+    del kwargs['percentage']
+    del kwargs['dropout']
+    del kwargs['batch_size']
+    train_data = ToyBatchTrajToyData(train_obs, train_actions, sigma, mu, mvwrapper, drop=not test_only_dropout, get_player_pos=get_player_pos, **kwargs)
+    val_data = ToyBatchTrajToyData(val_obs, val_actions, sigma, mu, mvwrapper, drop=True, get_player_pos=get_player_pos, **kwargs)
     return train_data, val_data
 
 
@@ -172,6 +183,8 @@ class ToyBatchTrajToyData(Dataset):
         # retrieve and pad observations
         obs = obs[start_idx:start_idx+max_len+1]
         obs = np.concatenate([obs, np.zeros((pad_length, *obs.shape[1:]))], axis=0)
+        # scale up
+        obs = scale_obs(obs, self.scale)
         if self.mvwrapper: # stack views along channel dimension
             output = self.mvwrapper.observation(obs, (force_no_drop or not self.drop)) 
             obs = output['views']
@@ -180,8 +193,6 @@ class ToyBatchTrajToyData(Dataset):
         else:
             obs = obs[:,None]
             dropped = np.zeros((obs.shape[0], 1))
-        # scale up
-        obs = scale_obs(obs, self.scale)
         
         if self.get_player_pos:
                 player_pos = np.zeros_like(obs)
@@ -260,6 +271,8 @@ class PongBatchTrajToyData(Dataset):
             # retrieve and pad observations
             obs = obs[start_idx:start_idx+max_len+1]
             obs = np.concatenate([obs, np.zeros((pad_length, *obs.shape[1:]))], axis=0)
+            # scale up
+            obs = scale_obs(obs, self.scale)
             if self.mvwrapper: # stack views along channel dimension
                 output = self.mvwrapper.observation(obs, (force_no_drop or not self.drop)) 
                 obs = output['views']
@@ -268,8 +281,6 @@ class PongBatchTrajToyData(Dataset):
             else:
                 obs = obs[:,None]
                 dropped = np.zeros((obs.shape[0], 1))
-            # scale up
-            obs = scale_obs(obs, self.scale)
             
             if self.get_player_pos:
                 player_pos = np.zeros_like(obs)
@@ -301,13 +312,14 @@ class PongBatchTrajToyData(Dataset):
         )
         
 def scale_obs(obs, scale):
-    if scale == 1:
-        return obs
-    h, w = obs.shape[-2:]
-    new_h, new_w = int(h * scale), int(w * scale)
-    new_obs = np.zeros((*obs.shape[:-2], new_h, new_w))
-    # fill new obs appropriately
-    for i in range(new_h):
-        for j in range(new_w):
-            new_obs[..., i, j] = obs[..., int(i / scale), int(j / scale)]
-    return new_obs
+    return torch.nn.functional.interpolate(torch.from_numpy(obs).float()[:,None], scale_factor=scale, mode='nearest-exact').numpy()[:,0]
+    # if scale == 1:
+    #     return obs
+    # h, w = obs.shape[-2:]
+    # new_h, new_w = int(h * scale), int(w * scale)
+    # new_obs = np.zeros((*obs.shape[:-2], new_h, new_w))
+    # # fill new obs appropriately
+    # for i in range(new_h):
+    #     for j in range(new_w):
+    #         new_obs[..., i, j] = obs[..., int(i / scale), int(j / scale)]
+    # return new_obs
