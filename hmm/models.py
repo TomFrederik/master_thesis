@@ -158,7 +158,7 @@ class DiscreteNet(nn.Module):
             value_prefix_loss = 0
         
         outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
-        outputs['value_prefix_loss'] = value_prefix_loss 
+        outputs['value_prefix_loss'] = value_prefix_loss
         outputs['recon_loss'] = recon_loss
         outputs["dyn_loss"] = self.kl_scaling * dyn_loss / self.l_unroll
         outputs['prior_entropy'] = (prior_entropy + sum(prior_entropies))/(len(prior_entropies) + 1)

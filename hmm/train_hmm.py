@@ -214,7 +214,6 @@ def main(
 if __name__ == '__main__':
     parser = create_train_parser()
     args = parser.parse_args()
-    print(vars(args))
-    # raise ValueError("This is a script to be run in the notebook.")
+
     main(**vars(args))
     

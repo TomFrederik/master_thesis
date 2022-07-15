@@ -12,19 +12,30 @@ from hmm.utils import Tensor, generate_all_combinations
 
 ### stolen from dreamer
 def conv_out(h_in, padding, kernel_size, stride):
+    # can also use this for pooling
     return int((h_in + 2. * padding - (kernel_size - 1.) - 1.) / stride + 1.)
 
 def convtrans_out(h_in, padding, kernel_size, stride):
-    return int(((h_in - 1) * stride - 2 * padding + (kernel_size - 1.)) + padding + 1.)
-
-def output_padding(h_in, conv_out, padding, kernel_size, stride):
-    return h_in - (conv_out - 1) * stride + 2 * padding - (kernel_size - 1) - 1
+    return int(((h_in - 1) * stride - 2 * padding + (kernel_size - 1.)) + 1.)
 
 def conv_out_shape(h_in, padding, kernel_size, stride):
     return tuple(conv_out(x, padding, kernel_size, stride) for x in h_in)
 
 def convtrans_out_shape(h_in, padding, kernel_size, stride):
     return tuple(convtrans_out(x, padding, kernel_size, stride) for x in h_in)
+
+class Interpolate(nn.Module):
+    def __init__(self, size=None, scale_factor=None, mode='nearest-exact', align_corners=None):
+        super().__init__()
+        if size is None and scale_factor is None:
+            raise ValueError("One of size or scale_factor must be defined")
+        self.size = size
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners
+    
+    def forward(self, x):
+        return F.interpolate(x, self.size, self.scale_factor, self.mode, self.align_corners)
 
 class Decoder(nn.Module):
 
@@ -50,40 +61,35 @@ class Decoder(nn.Module):
 
         d = depth
         k  = kernel_size
-        conv_shapes = [conv_out_shape(output_shape[1:], 0, k, 2)]
         ctr = 0
         
-        while conv_shapes[-1][1] > 3:
-            conv_shapes.append(conv_out_shape(conv_shapes[-1], 0, k, 2))
+        shapes = [(2, 2)]
+        while shapes[-1] < output_shape[1:]:
+            shapes.append((shapes[-1][0]*2, shapes[-1][1]*2))
             ctr += 1
-
-        output_paddings = []
-        for i in range(1, ctr+2):
-            transposed_conv_shape = convtrans_out_shape(conv_shapes[-i], 0, k, 2)
-            output_paddings.append([h1-h2 for (h1, h2) in zip(([output_shape[-2:]] + conv_shapes)[-i-1], transposed_conv_shape)])
-        
-        self.conv_shape = (2**ctr*d, *conv_shapes[-1])
-        self.output_shape = output_shape
+        shapes[-1] = output_shape[1:]
         
         if not latent_dim_is_total:
            latent_dim = num_vars * latent_dim  
         
-        
-        self.linear = nn.Linear(latent_dim, np.prod(self.conv_shape).item())
+        # self.linear = nn.Linear(latent_dim, np.prod(self.conv_shape).item())
+        self.linear = nn.Linear(latent_dim, 2*2*2**ctr*d)
 
         transposed_list =[]
         for i in range(ctr):
-            transposed_list.append(nn.ConvTranspose2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, k, 2, output_padding=output_paddings[i]))
+            transposed_list.append(Interpolate(size=shapes[i+1]))
+            transposed_list.append(nn.Conv2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, kernel_size=k, stride=1, padding=1))
+            # transposed_list.append(nn.ConvTranspose2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, kernel_size=k, stride=1, padding=1))
             transposed_list.append(nn.ELU(alpha=1.0))
             # transposed_list.append(nn.ReLU())
-            
+        
 
         self.net = nn.Sequential(
             self.linear,
-            layers.Rearrange('b (d h w) -> b d h w', d=self.conv_shape[0], h=self.conv_shape[1], w=self.conv_shape[2]),
+            layers.Rearrange('b (d h w) -> b d h w', d=2**ctr*d, h=2, w=2),
             *transposed_list,
-            nn.ConvTranspose2d(d, output_channels, k, 2, output_padding=output_paddings[-1]),
-            # nn.Conv2d(output_channels, output_channels, 1, 1),
+            # nn.ConvTranspose2d(d, output_channels, k, 2, output_padding=output_paddings[-1]),
+            nn.Conv2d(d, output_channels, 1, 1),
         )
         
         
