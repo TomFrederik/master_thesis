@@ -252,6 +252,9 @@ def main(
     
     # start training
     trainer.fit(model, train_loader, val_loader)
+    
+    # finish logging
+    logger.experiment.finish()
 
 if __name__ == '__main__':
     parser = create_train_parser()
