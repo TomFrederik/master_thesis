@@ -93,7 +93,7 @@ class DiscreteNet(nn.Module):
             #         raise ValueError(dropped[batch, view])            
         
         # make sure that posterior is normalized
-        posterior = posterior + 1e-8 # add a small constant to avoid numerical issues
+        # posterior = posterior + 1e-8 # add a small constant to avoid numerical issues
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
 
@@ -123,7 +123,6 @@ class DiscreteNet(nn.Module):
         # unnormalized p(z_t|x_t)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
         
-        
         # compute entropies
         prior_entropy = discrete_entropy(state_belief).mean()
         posterior_entropy = discrete_entropy(posterior_0).mean()    
@@ -145,13 +144,9 @@ class DiscreteNet(nn.Module):
         
         obs_logits_sequence = torch.cat([obs_logits_0[:,None], obs_logits_sequence], dim=1)
 
-        # print()
-        # print(torch.var(posterior_belief_sequence, dim=-1))
-
         # compute losses
         recon_loss = self.compute_recon_loss(posterior_belief_sequence, obs_logits_sequence, dropped, nonterms)
         
-        # print(f"{recon_loss = }")
         if not self.disable_vp:
             value_prefix_loss = self.compute_vp_loss(value_prefix_pred, target_value_prefixes) # TODO if we use longer rollout need to adapt this
         else:
@@ -170,9 +165,8 @@ class DiscreteNet(nn.Module):
 
     def prepare_vp_input(self, belief, bit_vecs):
         if self.sparsemax:
-            # return belief, bit_vecs.flatten(start_dim=0)[None].float()
-            return (belief[...,None] * bit_vecs[None]).flatten(start_dim=1)
-            # return torch.cat([belief, bit_vecs.flatten()[None]], dim=-1)
+            # return (belief[...,None] * bit_vecs[None]).flatten(start_dim=1)
+            return bit_vecs
         else:
             return belief
 
@@ -201,16 +195,20 @@ class DiscreteNet(nn.Module):
         for t in range(1, action_sequence.shape[1]):
             # predict value prefixes
             if not self.disable_vp:
+                vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
                 if self.sparsemax:
-                    vp_input = posterior_bit_vecs_sequence[-1].float()
                     value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
                 else:
-                    vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
                     value_prefix_pred.append(self.value_prefix_predictor(vp_input))
                     
             
             # get the priors for the next state
             prior, state_bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
+
+            # numerical stability
+            # NOTE: do I actually still need this?
+            prior = prior + 1e-8
+            prior = prior / torch.sum(prior, dim=-1, keepdim=True)
 
             # get the posterior for the next state
             state_belief_posterior, obs_logits = self.compute_posterior(prior, state_bit_vecs, obs_sequence[:,t], dropped[:,t])
@@ -231,11 +229,10 @@ class DiscreteNet(nn.Module):
                 posterior_entropies.append(torch.zeros_like(posterior_entropies[-1]))
         
         # predict value prefixes
+        vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
         if self.sparsemax:
-            vp_input = posterior_bit_vecs_sequence[-1].float()
             value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
         else:
-            vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
             value_prefix_pred.append(self.value_prefix_predictor(vp_input))
         
         # stack along time dimension
@@ -407,9 +404,10 @@ class LightningNet(pl.LightningModule):
         self.log(f"Training/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
         self.log(f"Training/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         if torch.isnan(total_loss).any():
-            for key, value in outputs.items():
-                print(f"{key}: {value}")
-            raise ValueError("Total loss is NaN!")
+            pass
+            # for key, value in outputs.items():
+            #     print(f"{key}: {value}")
+            # raise ValueError("Total loss is NaN!")
         return total_loss
     
     def validation_step(self, batch, batch_idx):
