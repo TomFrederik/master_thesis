@@ -107,10 +107,10 @@ def sparse_transition(
             beliefs.append(torch.einsum('abd, acd -> abc', out_features, in_features[:,i*batching_size:(i+1)*batching_size]))
         beliefs = torch.cat(beliefs, dim=-1)
         beliefs = F.softmax(beliefs, dim=-1)
-        beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
     else:
-        beliefs = F.softmax(torch.einsum('abd,acd->abc', out_features, in_features)/ (out_features.shape[-1] ** 0.5), dim=-1)
-        beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
+        beliefs = F.softmax(torch.einsum('abd,acd->abc', out_features, in_features) / (out_features.shape[-1] ** 0.5), dim=-1)
+    
+    beliefs = torch.einsum('abc,ab->ac', beliefs, state_belief)
 
     values, indices = torch.topk(beliefs.log(), k=k, dim=dim)
 
