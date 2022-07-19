@@ -5,7 +5,8 @@ def create_train_parser():
     parser = argparse.ArgumentParser()
 
     # env settings
-    parser.add_argument('--null_value', type=int, default=1)
+    parser.add_argument('--view_null_value', type=int, default=0, help="Value to use for unused parts in a view")
+    parser.add_argument('--drop_null_value', type=int, default=1, help="Value to use for dropped frames")
     parser.add_argument('--num_views', type=int, default=1)
     parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)

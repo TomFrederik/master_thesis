@@ -78,7 +78,7 @@ def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     std = f['obs'].attrs.get('std')
     mean = f['obs'].attrs.get('mean')
     
-    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['view_null_value'], kwargs['drop_null_value'])
     # init mvwrapper
     multiview_wrapper.observation(scale_obs(f['obs']["traj_0"]), kwargs['scale'])
         
@@ -99,7 +99,7 @@ def load_data(data_path, train_val_split=0.9, **kwargs):
     mu = np.mean(obs)
     obs, actions = _split_trajs(dones, action, obs)
 
-    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['null_value'])
+    multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['view_null_value'], kwargs['drop_null_value'])
     # init mvwrapper
     multiview_wrapper.observation(scale_obs(obs[0], kwargs['scale']))
         
@@ -112,7 +112,8 @@ def load_data(data_path, train_val_split=0.9, **kwargs):
 def construct_pong_train_val_data(data_path, train_val_split=0.9, test_only_dropout=False, get_player_pos=False, **kwargs):
     train_idcs, val_idcs, sigma, mu, mvwrapper = load_data_h5py(data_path, train_val_split, **kwargs)
     del kwargs['num_views']
-    del kwargs['null_value']
+    del kwargs['view_null_value']
+    del kwargs['drop_null_value']
     del kwargs['percentage']
     del kwargs['dropout']
     del kwargs['batch_size']
@@ -126,7 +127,8 @@ def construct_toy_train_val_data(data_path, train_val_split=0.9, test_only_dropo
     (train_obs, train_actions), (val_obs, val_actions), sigma, mu, mvwrapper = load_data(data_path, train_val_split, **kwargs)
     # argh, this is awful style --> #TODO fix if have time
     del kwargs['num_views']
-    del kwargs['null_value']
+    del kwargs['view_null_value']
+    del kwargs['drop_null_value']
     del kwargs['percentage']
     del kwargs['dropout']
     del kwargs['batch_size']

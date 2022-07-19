@@ -18,7 +18,8 @@ RewardSupport = namedtuple("RewardSupport", ["min", "max", "size"])
         
 def main(
     num_views,
-    null_value,
+    view_null_value,
+    drop_null_value,
     percentage,
     dropout,
     kl_balancing_coeff,
@@ -86,7 +87,8 @@ def main(
     # init dataset and dataloader
     data_kwargs = dict(
         num_views=num_views,
-        null_value=null_value,
+        view_null_value=view_null_value,
+        drop_null_value=drop_null_value,
         percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,

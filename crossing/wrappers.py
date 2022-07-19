@@ -143,7 +143,8 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         percentage: Optional[float] = None,
         num_views: int = 1,
         dropout: Optional[float] = 0.0,
-        null_value: Optional[int] = 1,
+        view_null_value: Optional[int] = 0,
+        drop_null_value: Optional[int] = 1,
     ):
         if percentage not in [0.5, 0.75, 1]:
             raise ValueError("percentage must be 0.5, 0.75, or 1")
@@ -159,7 +160,8 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         
         self.percentage = percentage
         self.num_views = num_views
-        self.null_value = null_value
+        self.view_null_value = view_null_value
+        self.drop_null_value = drop_null_value
         self.initialized = False
         self.dropout = dropout
     
@@ -193,7 +195,7 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         # lower-right: 3
         
         
-        self.null_mask = np.zeros(observation.shape) + self.null_value
+        self.null_mask = np.zeros(observation.shape) + self.view_null_value
         
         if self.num_views == 1:
             self.view_masks = {0: np.ones_like(observation).astype(np.float32)}
@@ -249,7 +251,7 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
                 for t in range(observation.shape[0]):
                     if random.random() < self.dropout:
                         dropped[t, view] = 1
-                        view_image[t] = self.null_value
+                        view_image[t] = self.drop_null_value
             views[f'view_{view}'] = view_image
         output = dict(
             views=views,

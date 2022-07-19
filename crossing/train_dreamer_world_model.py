@@ -120,7 +120,8 @@ class ExtrapolateCallback(pl.Callback):
 
 def main(
     num_views,
-    null_value,
+    view_null_value,
+    drop_null_value,
     percentage,
     dropout,
     kl_balancing_coeff,
@@ -151,7 +152,8 @@ def main(
     data_cls = construct_toy_train_val_data
     data_kwargs = dict(
         num_views=num_views,
-        null_value=null_value,
+        view_null_value=view_null_value,
+        drop_null_value=drop_null_value,
         percentage=percentage,
         dropout=dropout,
         test_only_dropout=test_only_dropout,
@@ -184,6 +186,7 @@ def main(
     rssm_info = {'deter_size':100, 'class_size':num_variables, 'category_size':codebook_size, 'min_std':0.1}
 
     obs_encoder = {'layers':3, 'dist': None, 'activation':torch.nn.ELU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
+    obs_decoder = {'layers':3, 'dist': None, 'activation':torch.nn.ELU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
     worldmodel_config = dict(
         num_views=num_views,
         action_size = num_actions,
@@ -201,12 +204,14 @@ def main(
         depth = depth,
         kernel_size = kernel_size,
         obs_encoder = obs_encoder,
+        obs_decoder = obs_decoder,
         reward_config = dict(
             layers = 2,
             activation = torch.nn.ReLU,
             node_size = 128,
             dist = None,
-        )
+        ),
+        view_masks = train_data.mvwrapper.view_masks,
     )
     
     
