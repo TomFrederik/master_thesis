@@ -27,7 +27,9 @@ class DreamerWorldModel(pl.LightningModule):
         self.kl_info = config.kl_info
         self.batch_size = config.batch_size
         self.loss_scale = config.loss_scale
-
+        #TODO separate channels and views rather than treating them interchangably?
+        self.view_masks = nn.Parameter(data=torch.stack([torch.from_numpy(config.view_masks[i]).to(self.device) for i in range(len(config.view_masks))], dim=0), requires_grad=False)
+        
         self.RSSM = RSSM(self.action_size, config.rssm_node_size, config.num_views * config.embedding_size, device, config.rssm_type, config.rssm_info)
         
         category_size = config.rssm_info['category_size']
@@ -44,20 +46,28 @@ class DreamerWorldModel(pl.LightningModule):
         obs_shape = tuple(obs_shape)
         
         self.ObsEncoders = nn.ModuleList([ObsEncoder(obs_shape, config.embedding_size, config.obs_encoder) for _ in range(config.num_views)])
-        # self.ObsDecoders = nn.ModuleList([ObsDecoder(obs_shape, modelstate_size, config.obs_decoder) for _ in range(config.num_views)])
         self.ObsDecoders = nn.ModuleList([
-            Decoder(
-                scale=1, 
-                kernel_size=config.kernel_size, 
-                img_shape=config.obs_shape[1:], 
-                depth=config.depth, 
-                output_channels=1, 
-                latent_dim=modelstate_size, 
-                num_vars=config.num_variables, 
-                latent_dim_is_total=True
-            ) 
+            ObsDecoder(
+                tuple([1] + list(obs_shape[1:])), 
+                modelstate_size, 
+                config.obs_decoder
+            )
             for _ in range(config.num_views)
         ])
+        print(self.ObsDecoders)
+        # self.ObsDecoders = nn.ModuleList([
+        #     Decoder(
+        #         scale=1, 
+        #         kernel_size=config.kernel_size, 
+        #         img_shape=config.obs_shape[1:], 
+        #         depth=config.depth, 
+        #         output_channels=1, 
+        #         latent_dim=modelstate_size, 
+        #         num_vars=config.num_variables, 
+        #         latent_dim_is_total=True
+        #     ) 
+        #     for _ in range(config.num_views)
+        # ])
 
     def compute_train_metrics(self, obs, actions, value_prefixes, nonterms, dropped, playerpos):
         train_metrics = dict()
@@ -141,6 +151,7 @@ class DreamerWorldModel(pl.LightningModule):
         std = 1 # TODO?
         *_, h, w = obs.shape
         exponent = -(obs - obs_mean)**2 / (2*std**2) * (1-dropped)[...,None,None]
+        exponent = exponent * self.view_masks[None,None]
         recon_loss = -torch.sum(exponent, dim=[-1,-2,-3])
         num_non_dropped_per_time = torch.sum((1-dropped), dim=2)
         recon_loss[num_non_dropped_per_time > 0] = recon_loss[num_non_dropped_per_time > 0] / num_non_dropped_per_time[num_non_dropped_per_time > 0] 
