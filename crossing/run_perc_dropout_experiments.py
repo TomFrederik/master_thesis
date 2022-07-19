@@ -11,6 +11,7 @@ train_parser: ArgumentParser = create_train_parser()
 train_parser.add_argument('--hparam_dir', type=str, default='./hparam_files/dreamer/perc_dropout/job_0')
 train_parser.add_argument('--best_hparam_file', type=str, default='./hparam_files/dreamer/best_hparams.json')
 train_parser.add_argument('--num_seeds_per_run', type=int, default=3)
+train_parser.add_argument('--reduced_volume', action='store_true', help="Reduce num settings to 1")
 train_parser.add_argument('--job_id', type=int, default=None)
 train_args = vars(train_parser.parse_args())
 
@@ -19,6 +20,7 @@ args = {
     "best_hparam_file": train_args['best_hparam_file'],
     "num_seeds_per_run": train_args['num_seeds_per_run'],
     "job_id": train_args['job_id'],
+    "reduced_volume": train_args['reduced_volume'],
 }
 
 for param in args:
@@ -42,6 +44,10 @@ else:
 # perform runs
 for i, file in enumerate(os.listdir(args['hparam_dir'])):
     setting_id = file.split('.')[0]
+    
+    if args["reduced_volume"] and setting_id not in ["7", "8", "10", "12"]:
+        print(f"\nSkipping {setting_id} because of reduced_volume!")
+        continue
     
     with open(os.path.join(args['hparam_dir'], file), 'r') as f:
         hparams = json.load(f)
