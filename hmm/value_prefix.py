@@ -28,20 +28,20 @@ def construct_mlp(input_dim, mlp_hidden_dims, output_dim, batchnorm):
 
 
 class SparseValuePrefixPredictor(nn.Module):
-    def __init__(self, num_variables, mlp_hidden_dims, num_values, vp_batchnorm=False):
+    def __init__(self, num_variables, mlp_hidden_dims, output_dim, vp_batchnorm=False):
         super().__init__()
         
         self.mlp_hidden_dims = mlp_hidden_dims
-        self.num_values = num_values
+        self.output_dim = output_dim
 
         # TODO make embedding dim a parameter
-        self.latent_embedding = nn.Parameter(torch.zeros(num_variables, num_values, 128))
+        self.latent_embedding = nn.Parameter(torch.zeros(num_variables, output_dim, 128))
         
         # init with std = 1/sqrt(input_dim_to_network) = 1/sqrt(embed_dim * num_variables) 
         nn.init.normal_(self.latent_embedding, mean=0, std=1/(num_variables*128)**0.5)
         
         
-        self.mlp = construct_mlp(num_variables*128, self.mlp_hidden_dims, self.num_values, vp_batchnorm)
+        self.mlp = construct_mlp(num_variables*128, self.mlp_hidden_dims, self.output_dim, vp_batchnorm)
 
     def forward(self, bit_vecs):
         
@@ -78,25 +78,25 @@ class MarginalSparseValuePrefixPredictor(nn.Module):
 
     
 class OLDSparseValuePrefixPredictor(nn.Module):
-    def __init__(self, num_variables, mlp_hidden_dims, num_values, vp_batchnorm=False):
+    def __init__(self, num_variables, mlp_hidden_dims, output_dim, vp_batchnorm=False):
         super().__init__()
         
         self.mlp_hidden_dims = mlp_hidden_dims
-        self.num_values = num_values
+        self.output_dim = output_dim
         
-        self.mlp = construct_mlp(num_variables, self.mlp_hidden_dims, self.num_values, vp_batchnorm)
+        self.mlp = construct_mlp(num_variables, self.mlp_hidden_dims, self.output_dim, vp_batchnorm)
 
     def forward(self, x):
         return self.mlp(x)[...,0]
 
 class DenseValuePrefixPredictor(nn.Module):
-    def __init__(self, state_size, num_values, mlp_hidden_dims, vp_batchnorm=False):
+    def __init__(self, state_size, output_dim, mlp_hidden_dims, vp_batchnorm=False):
         super().__init__()
         self.state_size = state_size
-        self.num_values = num_values
+        self.output_dim = output_dim
         self.mlp_hidden_dims = mlp_hidden_dims
         
-        self.mlp = construct_mlp(state_size, self.mlp_hidden_dims, self.num_values, vp_batchnorm)
+        self.mlp = construct_mlp(state_size, self.mlp_hidden_dims, self.output_dim, vp_batchnorm)
             
     def forward(self, x):
         out = self.mlp(x)[...,0]
