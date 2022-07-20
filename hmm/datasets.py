@@ -298,9 +298,6 @@ class PongBatchTrajToyData(Dataset):
             # center and normalize
             obs = (obs - self.mu) / self.sigma
             
-            # downscale to 64x64
-            obs = tv.transforms.Resize((64,64))(torch.from_numpy(obs)).numpy()
-            
             nonterms = np.ones_like(action)
             if pad_length > 0:
                 nonterms[-pad_length:] = 0

@@ -8,7 +8,7 @@ from gym_minigrid.wrappers import FullyObsWrapper
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
+import torchvision as tv
 
 ## NOTE maybe use this for transition tuples instead?
 # class FunctionalMVW: # used to map recorded obs to multiple views, without needing an env object
@@ -166,6 +166,10 @@ class FunctionalMVW: # used to map recorded obs to multiple views, without needi
         self.dropout = dropout
     
     def observation(self, observation, force_no_drop: Optional[bool] = False) -> Dict:
+        if observation.shape[-2:] == (84,84):
+            observation = tv.transforms.Resize((64,64))(torch.from_numpy(observation)).numpy()
+        
+        
         if not self.initialized:
             self._init_views(observation[0]) # only use the first observation of the trajectory
             self.initialized = True

@@ -80,7 +80,7 @@ class DreamerWorldModel(pl.LightningModule):
         value_prefixes = einops.rearrange(value_prefixes, 'b t ... -> t b ...')
         dropped = einops.rearrange(dropped, 'b t ... -> t b ...')
 
-        model_loss, kl_loss, recon_loss, value_prefix_loss, tuning_loss, prior_dist, post_dist, posterior, obs_dist = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped)
+        model_loss, kl_loss, recon_loss, value_prefix_loss, tuning_loss, prior_dist, post_dist, posterior, obs_dist = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped, batch_size=obs.shape[1])
 
         with torch.no_grad():
             prior_ent = torch.mean(prior_dist.entropy())
