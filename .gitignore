@@ -142,6 +142,7 @@ MT-ToyTask-Ours/
 hmm/MT-ToyTask-Ours
 hmm/MT-Pong-Ours
 hmm/wandb
+MT-Pong-Dreamer/
 
 #python notebooks
 .ipynb_checkpoints
