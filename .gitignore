@@ -143,6 +143,10 @@ hmm/MT-ToyTask-Ours
 hmm/MT-Pong-Ours
 hmm/wandb
 
+#python notebooks
+.ipynb_checkpoints
+*.ipynb
+
 # data
 *.zip
 *.npz
