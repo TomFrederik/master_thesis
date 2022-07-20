@@ -36,7 +36,8 @@ def main(train_args):
     # perform runs
     setting_id = args["hparam_file"].split('.')[0]
 
-    if args["reduced_volume"] and setting_id not in ["7", "8", "10", "12"]:
+    # if args["reduced_volume"] and setting_id not in ["7", "8", "10", "12"]:
+    if args["reduced_volume"] and setting_id not in ["8"]:
         print(f"\nSkipping {setting_id} because of reduced_volume!")
         return
 
