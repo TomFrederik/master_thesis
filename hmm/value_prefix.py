@@ -52,6 +52,31 @@ class SparseValuePrefixPredictor(nn.Module):
         out = self.mlp(embeds)
         return einops.rearrange(out, '(batch k) dim -> batch k dim', batch=batch, k=k)[...,0]
     
+    
+class MarginalSparseValuePrefixPredictor(nn.Module):
+    def __init__(self, num_variables, mlp_hidden_dims, output_dim, vp_batchnorm=False):
+        super().__init__()
+        
+        self.mlp_hidden_dims = mlp_hidden_dims
+        self.output_dim = output_dim
+
+        # TODO make embedding dim a parameter
+        self.latent_embedding = nn.Parameter(torch.zeros(num_variables, output_dim, 128))
+        
+        # init with std = 1/sqrt(input_dim_to_network) = 1/sqrt(embed_dim * num_variables) 
+        nn.init.normal_(self.latent_embedding, mean=0, std=1/(num_variables*128)**0.5)
+        
+        
+        self.mlp = construct_mlp(num_variables, self.mlp_hidden_dims, self.output_dim, vp_batchnorm)
+
+    def forward(self, beliefs, bit_vecs):
+        
+        marginalized_beliefs = (beliefs[...,None] * bit_vecs).sum(dim=-2)
+        # print(f"{beliefs[0] = }")
+        out = self.mlp(marginalized_beliefs)
+        return out[...,0]
+
+    
 class OLDSparseValuePrefixPredictor(nn.Module):
     def __init__(self, num_variables, mlp_hidden_dims, num_values, vp_batchnorm=False):
         super().__init__()

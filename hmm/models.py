@@ -12,7 +12,7 @@ from sparsemax_k import BitConverter, sparsemax_k
 from state_prior import StatePrior
 from transition_models import FactorizedTransition
 from utils import discrete_entropy, kl_balancing_loss
-from value_prefix import DenseValuePrefixPredictor, SparseValuePrefixPredictor
+from value_prefix import DenseValuePrefixPredictor, SparseValuePrefixPredictor, MarginalSparseValuePrefixPredictor
 
 
 class DiscreteNet(nn.Module):
@@ -166,9 +166,9 @@ class DiscreteNet(nn.Module):
     def prepare_vp_input(self, belief, bit_vecs):
         if self.sparsemax:
             # return (belief[...,None] * bit_vecs[None]).flatten(start_dim=1)
-            return bit_vecs
+            return (belief, bit_vecs)
         else:
-            return belief
+            return (belief, )
 
     def process_sequence(
         self, 
@@ -197,9 +197,10 @@ class DiscreteNet(nn.Module):
             if not self.disable_vp:
                 vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
                 if self.sparsemax:
-                    value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
+                    # value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(*vp_input)))
+                    value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
                 else:
-                    value_prefix_pred.append(self.value_prefix_predictor(vp_input))
+                    value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
                     
             
             # get the priors for the next state
@@ -231,9 +232,10 @@ class DiscreteNet(nn.Module):
         # predict value prefixes
         vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
         if self.sparsemax:
-            value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(vp_input)))
+            # value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(*vp_input)))
+            value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
         else:
-            value_prefix_pred.append(self.value_prefix_predictor(vp_input))
+            value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
         
         # stack along time dimension
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)
@@ -271,6 +273,8 @@ class DiscreteNet(nn.Module):
         return recon_loss
 
     def compute_vp_loss(self, value_prefix_pred, target_value_prefixes):
+        print(f"{value_prefix_pred = }")
+        print(f"{target_value_prefixes = }")
         return F.mse_loss(value_prefix_pred, target_value_prefixes)
 
     def k_step_extrapolation(self, state_belief, state_bit_vec, action_sequence, k=None):
@@ -361,11 +365,14 @@ class LightningNet(pl.LightningModule):
             else:
                 state_size = emission_kwargs['codebook_size'] ** emission_kwargs['num_variables']
             if sparsemax:
-                self.value_prefix_predictor = SparseValuePrefixPredictor(emission_kwargs['num_variables'], **vp_kwargs)
+                # self.value_prefix_predictor = SparseValuePrefixPredictor(emission_kwargs['num_variables'], **vp_kwargs)
+                self.value_prefix_predictor = MarginalSparseValuePrefixPredictor(emission_kwargs['num_variables'], **vp_kwargs)
             else:
                 self.value_prefix_predictor = DenseValuePrefixPredictor(state_size, **vp_kwargs)
         else:
             self.value_prefix_predictor = None
+        
+        print(self.value_prefix_predictor)
         
         
         self.emission = EmissionModel(**emission_kwargs) #TODO
@@ -401,7 +408,7 @@ class LightningNet(pl.LightningModule):
         self.log(f'Training/unscaled_prior_loss', unscaled_prior_loss)
         self.log(f"Training/total_loss", total_loss)
         self.log(f"Training/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
-        self.log(f"Training/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
+        self.log(f"Training/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + 0.01 * unscaled_prior_loss)
         self.log(f"Training/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         if torch.isnan(total_loss).any():
             pass

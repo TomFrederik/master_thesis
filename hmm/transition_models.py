@@ -104,7 +104,7 @@ def sparse_transition(
         batch, num_states, emb_dim = in_features.shape
         beliefs = []
         for i in range(num_states // batching_size + 1):
-            beliefs.append(torch.einsum('abd, acd -> abc', out_features, in_features[:,i*batching_size:(i+1)*batching_size]))
+            beliefs.append(torch.einsum('abd, acd -> abc', out_features, in_features[:,i*batching_size:(i+1)*batching_size]) / (out_features.shape[-1] ** 0.5))
         beliefs = torch.cat(beliefs, dim=-1)
         beliefs = F.softmax(beliefs, dim=-1)
     else:

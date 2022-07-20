@@ -12,7 +12,6 @@ from models import LightningNet
 
 from callbacks import ExtrapolateCallback, ReconstructionCallback
 from parsers import create_train_parser
-
 RewardSupport = namedtuple("RewardSupport", ["min", "max", "size"])
 
         
@@ -122,7 +121,7 @@ def main(
     
     num_values = 1
     vp_kwargs = dict(
-        num_values=num_values,
+        output_dim=num_values,
         mlp_hidden_dims=vp_layer_dims,
         vp_batchnorm=vp_batchnorm,
     )
