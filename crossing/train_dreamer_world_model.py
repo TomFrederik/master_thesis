@@ -143,6 +143,8 @@ def main(
     wandb_group,
     wandb_id,
     obs_scale,
+    env_name,
+    obs_layers,
 ):
     
     
@@ -167,26 +169,36 @@ def main(
     pl.seed_everything(seed)
     
     # get data path
-    file_name = f"ppo_all_env_experience.npz"
+    if env_name == 'toy':
+        file_name = f"ppo_all_env_experience.npz"
+        # file_name = f"ppo_const_env_experience.npz"
+    elif env_name == 'pong':
+        file_name = f"pong_data.hdf5"
+    else:
+        raise NotImplementedError(f"Unknown env_name: {env_name}")
     data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(data_path, file_name)
     
     # init dataset and dataloader
     train_val_split = 0.9
-    train_data, val_data = data_cls(data_path, **data_kwargs)
+    if env_name == 'toy':
+        train_data, val_data = construct_toy_train_val_data(data_path, **data_kwargs)
+    elif env_name == 'pong':
+        train_data, val_data = construct_pong_train_val_data(data_path, **data_kwargs)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
     # settings for toy env
-    num_actions = 4
+    num_actions = {'pong': 6, 'toy': 4}[env_name]
     
     rssm_type: str = 'discrete'
-    embedding_size: int = 128
+    embedding_size: int = {'pong': 1024, 'toy': 64}[env_name]
     rssm_node_size: int = 128
     rssm_info = {'deter_size':100, 'class_size':num_variables, 'category_size':codebook_size, 'min_std':0.1}
 
-    obs_encoder = {'layers':3, 'dist': None, 'activation':torch.nn.ELU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
-    obs_decoder = {'layers':3, 'dist': None, 'activation':torch.nn.ELU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
+    obs_encoder = {'layers':obs_layers, 'dist': None, 'activation':torch.nn.ReLU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
+    obs_decoder = {'layers':obs_layers, 'dist': None, 'activation':torch.nn.ReLU, 'kernel':kernel_size, 'depth':depth} # , 'node_size':100
+    obs_shape = {'pong': (num_views, 64, 64), 'toy': (num_views, 7, 7)}[env_name]
     worldmodel_config = dict(
         num_views=num_views,
         action_size = num_actions,
@@ -199,7 +211,7 @@ def main(
         rssm_type = rssm_type,
         rssm_info = rssm_info,
         embedding_size = embedding_size,
-        obs_shape = (num_views,7,7),
+        obs_shape = obs_shape,
         num_variables = num_variables,
         depth = depth,
         kernel_size = kernel_size,
@@ -234,7 +246,11 @@ def main(
         gradient_clip_val=gradient_clip_val,
         max_len=max_len,
     )
-    wandb_kwargs = dict(project="MT-ToyTask-Dreamer", config=wandb_config, group=wandb_group, id=wandb_id)
+    
+    wandb_proj = "ToyTask" if env_name == 'toy' else "Pong"
+    
+    
+    wandb_kwargs = dict(project=f"MT-{wandb_proj}-Dreamer", config=wandb_config, group=wandb_group, id=wandb_id)
     logger = WandbLogger(**wandb_kwargs)
     
     # callbacks

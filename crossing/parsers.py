@@ -11,6 +11,7 @@ def create_train_parser():
     parser.add_argument('--percentage', type=float, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--test_only_dropout', type=str, default='no', choices=['yes', 'no'])
+    parser.add_argument('--env_name', type=str, default='toy', choices=['toy', 'pong'])
     parser.add_argument('--obs_scale', type=int, default=1)
 
     ## model args
@@ -21,6 +22,7 @@ def create_train_parser():
     parser.add_argument('--depth', type=int, default=16, help="Scaling parameter for conv net")
     parser.add_argument('--num_variables', type=int, default=32)
     parser.add_argument('--codebook_size', type=int, default=32)
+    parser.add_argument('--obs_layers', type=int, default=3)
 
     # training args
     parser.add_argument('--learning_rate', type=float, default=0.0002)
