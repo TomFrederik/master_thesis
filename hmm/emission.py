@@ -80,8 +80,7 @@ class Decoder(nn.Module):
             transposed_list.append(Interpolate(size=shapes[i+1]))
             transposed_list.append(nn.Conv2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, kernel_size=k, stride=1, padding=1))
             # transposed_list.append(nn.ConvTranspose2d(2**(ctr-i)*d, 2**(ctr-i-1)*d, kernel_size=k, stride=1, padding=1))
-            transposed_list.append(nn.ELU(alpha=1.0))
-            # transposed_list.append(nn.ReLU())
+            transposed_list.append(nn.ReLU())
         
 
         self.net = nn.Sequential(
