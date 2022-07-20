@@ -151,3 +151,5 @@ hmm/wandb
 *.zip
 *.npz
 *.hdf5
+crossing/plot_generation.ipynb
+hmm/plot_generation.ipynb
