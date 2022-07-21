@@ -1,17 +1,19 @@
 import argparse
 import os
 from collections import namedtuple
+import sys
+sys.path.append('../../')
 
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from datasets import construct_toy_train_val_data, construct_pong_train_val_data
-from models import LightningNet
+from src.common.datasets import construct_toy_train_val_data, construct_pong_train_val_data
+from src.ours.callbacks import ExtrapolateCallback, ReconstructionCallback
+from src.ours.models import LightningNet
+from src.ours.parsers import create_train_parser
 
-from callbacks import ExtrapolateCallback, ReconstructionCallback
-from parsers import create_train_parser
 RewardSupport = namedtuple("RewardSupport", ["min", "max", "size"])
 
         
@@ -80,7 +82,7 @@ def main(
         file_name = f"pong_data.hdf5"
     else:
         raise NotImplementedError(f"Unknown env_name: {env_name}")
-    data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = '../../data/'
     data_path = os.path.join(data_path, file_name)
     
     # init dataset and dataloader

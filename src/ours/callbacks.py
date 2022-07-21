@@ -4,8 +4,9 @@ import torch
 import torch.nn.functional as F
 import wandb
 from torchvision.utils import make_grid
-
-from sparsemax_k import sparsemax_k
+import sys
+sys.path.append('../../')
+from src.ours.sparsemax_k import sparsemax_k
 
 
 class ReconstructionCallback(pl.Callback):

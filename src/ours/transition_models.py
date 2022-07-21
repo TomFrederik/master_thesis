@@ -5,7 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.common import Tensor
-from sparsemax_k import BitConverter, sparsemax
+
+import sys
+sys.path.append('../../')
+from src.ours.sparsemax_k import BitConverter, sparsemax_k
 
 
 # NOTE: Non-factorized is equivalent (in terms of no. of free params) to factorized with embedding_dim = |S|

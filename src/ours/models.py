@@ -1,5 +1,8 @@
 import logging
 from typing import Tuple, Union
+import sys
+
+sys.path.append('../../')
 
 import pytorch_lightning as pl
 import torch
@@ -7,12 +10,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.common import Tensor
-from emission import EmissionModel
-from sparsemax_k import BitConverter, sparsemax_k
-from state_prior import StatePrior
-from transition_models import FactorizedTransition
-from utils import discrete_entropy, kl_balancing_loss
-from value_prefix import MarginalValuePrefixPredictor
+from src.ours.emission import EmissionModel
+from src.ours.sparsemax_k import BitConverter, sparsemax_k
+from src.ours.state_prior import StatePrior
+from src.ours.transition_models import FactorizedTransition
+from src.ours.utils import discrete_entropy, kl_balancing_loss
+from src.ours.value_prefix import MarginalValuePrefixPredictor
 
 
 class DiscreteNet(nn.Module):
@@ -96,6 +99,8 @@ class DiscreteNet(nn.Module):
             state_belief, state_bit_vecs = sparsemax_k(state_belief, self.sparsemax_k) 
         else:
             state_logits = F.log_softmax(state_belief, dim=-1)
+            print(f"{state_logits.shape = }")
+            raise ValueError
             temp = state_logits[:,0]
             for i in range(1, state_logits.shape[1]):
                 temp = temp[...,None] + state_logits[:,i,None,:]

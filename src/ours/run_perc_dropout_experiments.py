@@ -3,7 +3,7 @@ import os
 from argparse import ArgumentParser
 import time
 
-from train_hmm import main as main_hmm
+from experiments.ours.train_hmm import main as main_hmm
 from parsers import create_train_parser
 
 def main(train_args):

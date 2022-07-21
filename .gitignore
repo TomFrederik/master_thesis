@@ -129,10 +129,9 @@ dmypy.json
 .pyre/
 
 # wandb stuff
-/wandb
+**/wandb
 /runs
 /models
-crossing/wandb
 crossing/runs
 crossing/models
 crossing/results
@@ -141,16 +140,12 @@ Crossing-dVAE/
 MT-ToyTask-Ours/
 hmm/MT-ToyTask-Ours
 hmm/MT-Pong-Ours
-hmm/wandb
 MT-Pong-Dreamer/
 
 #python notebooks
-.ipynb_checkpoints
-*.ipynb
+*.ipynb*
 
 # data
 *.zip
 *.npz
 *.hdf5
-crossing/plot_generation.ipynb
-hmm/plot_generation.ipynb
