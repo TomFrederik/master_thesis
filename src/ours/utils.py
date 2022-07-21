@@ -3,7 +3,9 @@ import math
 
 from memory_efficient_attention import efficient_dot_product_attention_pt
 import torch
-from hmm.commons import Tensor
+import sys
+sys.path.append('../../')
+from src.common import Tensor
 
 def discrete_kl(p: Tensor, q: Tensor) -> Tensor:
     """Compute the KL divergence between two discrete probability distributions.

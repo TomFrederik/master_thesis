@@ -6,8 +6,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import sys
 
-from hmm.utils import Tensor, generate_all_combinations
+sys.path.append('../../')
+from src.common import Tensor
+from src.ours.utils import generate_all_combinations
 
 
 ### stolen from dreamer
