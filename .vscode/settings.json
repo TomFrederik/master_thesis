@@ -1,4 +1,5 @@
 {
     "restructuredtext.confPath": "",
-    "esbonio.server.enabled": false
+    "esbonio.server.enabled": false,
+    "esbonio.sphinx.confDir": ""
 }

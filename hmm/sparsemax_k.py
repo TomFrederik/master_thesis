@@ -45,5 +45,6 @@ def sparsemax_k(logits, k, dim=-1):
     onehots = F.one_hot(topk_bit_vecs, num_classes=2).float()
     topk_logits = torch.einsum('ijkl,ikl->ij', onehots, logits)
     
-    out = sparsemax(topk_logits, dim=dim)
+    # out = sparsemax(topk_logits, dim=dim)
+    out = torch.softmax(topk_logits, dim=dim)
     return out, topk_bit_vecs

@@ -114,7 +114,8 @@ def sparse_transition(
 
     values, indices = torch.topk(beliefs.log(), k=k, dim=dim)
 
-    out = sparsemax(values, dim=dim)
+    out = torch.softmax(values, dim=dim)
+    # out = sparsemax(values, dim=dim)
 
     state_bit_vecs = bitconverter.idx_to_bitvec(indices)
 
