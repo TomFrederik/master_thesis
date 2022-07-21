@@ -279,6 +279,5 @@ if __name__ == '__main__':
     parser = create_train_parser()
     
     args = parser.parse_args()
-    
     main(**vars(args))
     

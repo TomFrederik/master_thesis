@@ -36,7 +36,7 @@ def main(train_args):
     # perform runs
     setting_id = args['hparam_file'].split('/')[-1].split('.')[0]
     
-    if args["reduced_volume"] and setting_id not in ["8"]:
+    if args["reduced_volume"] and setting_id not in ["7", "8", "10", "12"]:
         print(f"\nSkipping {setting_id} because of reduced_volume!")
         return
     
@@ -59,7 +59,7 @@ def main(train_args):
 # create parser and add arguments
 train_parser: ArgumentParser = create_train_parser()
 train_parser.add_argument('--hparam_file', type=str, default='../hparam_files/perc_dropout/0.json')
-train_parser.add_argument('--best_hparam_file', type=str, default='../hparam_files/best_hparams.json')
+train_parser.add_argument('--best_hparam_file', type=str, default='../hparam_files/ours_best_hparams.json')
 train_parser.add_argument('--reduced_volume', action='store_true', help="Reduce num settings to 1")
 train_parser.add_argument('--job_id', type=int, default=None)
 train_args = vars(train_parser.parse_args())
