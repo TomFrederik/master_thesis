@@ -41,7 +41,7 @@ def main(train_args):
         print(f"\nSkipping {setting_id} because of reduced_volume!")
         return
 
-    with open(os.path.join(args['hparam_dir'], args["hparam_file"]), 'r') as f:
+    with open(args["hparam_file"], 'r') as f:
         hparams = json.load(f)
 
     for seed in range(args['num_seeds_per_run']):
