@@ -54,14 +54,18 @@ class DiscreteNet(nn.Module):
         self.sparsemax = sparsemax
         self.sparsemax_k = sparsemax_k
         self.kl_scaling = kl_scaling
+        self.num_variables = state_prior.num_variables
         self.force_uniform_prior = force_uniform_prior
         
         self.recon_normalizer = nn.Parameter(data=torch.stack([torch.from_numpy(view_masks[i]) for i in range(len(view_masks))], dim=0).sum(dim=[1,2]), requires_grad=False)
 
         self.discount_array = self.discount_factor ** torch.arange(self.l_unroll)
         
-        if self.sparsemax:
-            self.bitconverter = BitConverter(state_prior.num_variables, 'cuda')
+        self.bitconverter = BitConverter(state_prior.num_variables, 'cuda')
+        if not self.sparsemax:
+            self.state_bit_vecs = self.bitconverter.idx_to_bitvec(torch.arange(state_prior.codebook_size ** state_prior.num_variables, device='cuda'))
+        else:
+            self.state_bit_vecs = None
         
     # def compute_value_prefixes(self, reward_sequence):
     #     if self.discount_array.device != reward_sequence.device:
@@ -75,8 +79,6 @@ class DiscreteNet(nn.Module):
         posterior = prior
         for view in range(obs_probs.shape[-1]):
             update = obs_probs[...,view] * (1 - dropped)[:, None, view]
-            # print(f"update {view}: {update = }")
-            nonzeros = torch.sum(update > 1e-6, dim=1)
             # this is a bit hacky but the idea is that the condition evaluates to true if the view is dropped and the update is 0
             # this means that if the view is not dropped (but the update is 0) the posterior is still 0 for that state
             posterior = torch.where((update + (1-dropped)[:, None, view]) == 0, posterior, update * posterior)
@@ -99,15 +101,8 @@ class DiscreteNet(nn.Module):
             state_belief, state_bit_vecs = sparsemax_k(state_belief, self.sparsemax_k) 
         else:
             state_logits = F.log_softmax(state_belief, dim=-1)
-            print(f"{state_logits.shape = }")
-            raise ValueError
-            temp = state_logits[:,0]
-            for i in range(1, state_logits.shape[1]):
-                temp = temp[...,None] + state_logits[:,i,None,:]
-                temp = torch.flatten(temp, start_dim=1)
-            state_belief = F.softmax(temp, dim=-1)
-            
-            state_bit_vecs = None
+            state_bit_vecs = self.state_bit_vecs
+            state_belief = F.softmax((state_logits[:, torch.arange(self.num_variables), state_bit_vecs]).sum(dim=-1), dim=-1)
 
         # unnormalized p(z_t|x_t)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
@@ -153,11 +148,7 @@ class DiscreteNet(nn.Module):
         return outputs
 
     def prepare_vp_input(self, belief, bit_vecs):
-        if self.sparsemax:
-            # return (belief[...,None] * bit_vecs[None]).flatten(start_dim=1)
-            return (belief, bit_vecs)
-        else:
-            return (belief, )
+        return (belief, bit_vecs)
 
     def process_sequence(
         self, 
@@ -185,12 +176,7 @@ class DiscreteNet(nn.Module):
             # predict value prefixes
             if not self.disable_vp:
                 vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
-                if self.sparsemax:
-                    # value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(*vp_input)))
-                    value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
-                else:
-                    value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
-                    
+                value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
             
             # get the priors for the next state
             prior, state_bit_vecs = self.transition(posterior_belief_sequence[-1], action_sequence[:,t-1], posterior_bit_vecs_sequence[-1])
@@ -220,11 +206,7 @@ class DiscreteNet(nn.Module):
         
         # predict value prefixes
         vp_input = self.prepare_vp_input(posterior_belief_sequence[-1], posterior_bit_vecs_sequence[-1])
-        if self.sparsemax:
-            # value_prefix_pred.append(torch.einsum('ij,ij->i', posterior_belief_sequence[-1], self.value_prefix_predictor(*vp_input)))
-            value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
-        else:
-            value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
+        value_prefix_pred.append(self.value_prefix_predictor(*vp_input))
         
         # stack along time dimension
         obs_logits_sequence = torch.stack(obs_logits_sequence, dim=1)

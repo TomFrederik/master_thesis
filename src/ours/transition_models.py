@@ -56,7 +56,7 @@ class FactorizedTransition(nn.Module):
         if self.sparse:
             return sparse_transition(self.state_emb, self.key_features[action], self.query_features[action], state_belief, state_bit_vecs, self.bitconverter)
         else:
-            return dense_transition(self.state_emb, self.key_features[action], self.query_features[action], state_belief)
+            return dense_transition(self.state_emb, self.key_features[action], self.query_features[action], state_belief, state_bit_vecs)
     
     @property
     def device(self):
@@ -68,6 +68,7 @@ def dense_transition(
     in_features: Tensor, 
     out_features: Tensor, 
     state_belief: Tensor,
+    state_bit_vecs: Tensor,
     ) -> Tuple[Tensor, None]:
     
     out_features = torch.einsum('aij,si->asj', out_features, state_emb)
@@ -75,7 +76,7 @@ def dense_transition(
     
     beliefs = F.softmax(torch.einsum('bsi,bti->bst', out_features, in_features) / (out_features.shape[-1] ** 0.5), dim=-1)
     beliefs = torch.einsum('ijk,ij->ik', beliefs, state_belief)
-    return beliefs, None
+    return beliefs, state_bit_vecs
 
 def sparse_transition(
     state_emb: Tensor,
