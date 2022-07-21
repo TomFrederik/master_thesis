@@ -130,13 +130,8 @@ dmypy.json
 
 # wandb stuff
 **/wandb
-/runs
-/models
-crossing/runs
-crossing/models
-crossing/results
-crossing/MT-ToyTask-Dreamer
-Crossing-dVAE/
+**/runs
+**/models
 MT-ToyTask-Ours/
 hmm/MT-ToyTask-Ours
 hmm/MT-Pong-Ours

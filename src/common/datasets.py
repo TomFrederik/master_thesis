@@ -1,15 +1,13 @@
 import numpy as np
 from torch.utils.data import Dataset
 import torch
-import torchvision as tv
 import sys
-sys.path.insert(0, '../')
-from crossing.wrappers import FunctionalMVW
-from typing import TypeVar
+sys.path.insert(0, '../../')
+from src.common.wrappers import FunctionalMVW
+from src.common import Tensor
 from dataclasses import dataclass
 import h5py
 
-from src.common import Tensor
 
 def _split_trajs(dones, actions, obs):
     stop_idcs = (np.where(dones == 1)[0] + 1).tolist()

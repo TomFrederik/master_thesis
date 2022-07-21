@@ -7,7 +7,10 @@ import stable_baselines3 as sb3
 from tqdm import tqdm
 import h5py
 
-from wrappers import MyFullWrapper, StepWrapper
+import sys
+sys.path.append('../../')
+
+from src.common.wrappers import MyFullWrapper, StepWrapper
 
 def main(
     num_trajectories
