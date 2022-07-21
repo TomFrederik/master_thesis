@@ -1,4 +1,3 @@
-import math
 import sys
 
 import einops
@@ -8,10 +7,8 @@ import torch.nn as nn
 from dreamerv2.models.dense import DenseModel
 from dreamerv2.models.rssm import RSSM
 
-from dreamer_visual import ObsDecoder, ObsEncoder
-
-sys.path.insert(0, '../')
-from hmm.emission import Decoder
+sys.path.append('../../')
+from src.dreamer.dreamer_visual import ObsDecoder, ObsEncoder
 
 
 class DreamerWorldModel(pl.LightningModule):

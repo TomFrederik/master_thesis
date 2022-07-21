@@ -176,7 +176,7 @@ def main(
         file_name = f"pong_data.hdf5"
     else:
         raise NotImplementedError(f"Unknown env_name: {env_name}")
-    data_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = '../../data/'
     data_path = os.path.join(data_path, file_name)
     
     # init dataset and dataloader

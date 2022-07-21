@@ -1,0 +1,11 @@
+{
+    "num_variables": 10,
+    "kl_scaling": 0.3,
+    "learning_rate": 0.0005,
+    "depth": 32,
+    "gradient_clip_val": 5,
+    "num_views": 2,
+    "num_epochs": 10,
+    "batch_size": 5,
+    "num_workers": 3
+}
