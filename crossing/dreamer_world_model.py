@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from dreamerv2.models.dense import DenseModel
-from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
+from dreamer_visual import ObsDecoder, ObsEncoder
 from dreamerv2.models.rssm import RSSM
 import sys
 
@@ -29,7 +29,6 @@ class DreamerWorldModel(pl.LightningModule):
         self.loss_scale = config.loss_scale
         #TODO separate channels and views rather than treating them interchangably?
         self.view_masks = nn.Parameter(data=torch.stack([torch.from_numpy(config.view_masks[i]).to(self.device) for i in range(len(config.view_masks))], dim=0), requires_grad=False)
-        
         self.RSSM = RSSM(self.action_size, config.rssm_node_size, config.num_views * config.embedding_size, device, config.rssm_type, config.rssm_info)
         
         category_size = config.rssm_info['category_size']
@@ -45,15 +44,14 @@ class DreamerWorldModel(pl.LightningModule):
         obs_shape[0] = 1
         obs_shape = tuple(obs_shape)
         
-        self.ObsEncoders = nn.ModuleList([ObsEncoder(obs_shape, config.embedding_size, config.obs_encoder) for _ in range(config.num_views)])
+        self.ObsEncoders = nn.ModuleList([ObsEncoder(obs_shape) for _ in range(config.num_views)])
         self.ObsDecoders = nn.ModuleList([
             ObsDecoder(
                 tuple([1] + list(obs_shape[1:])), 
-                modelstate_size, 
-                config.obs_decoder
             )
             for _ in range(config.num_views)
         ])
+        
         print(self.ObsDecoders)
         # self.ObsDecoders = nn.ModuleList([
         #     Decoder(
@@ -76,14 +74,13 @@ class DreamerWorldModel(pl.LightningModule):
         actions = torch.nn.functional.one_hot(actions, self.action_size)
         
         nonterms = einops.rearrange(nonterms, 'b t -> b t 1')
-
         obs = einops.rearrange(obs, 'b t ... -> t b ...')
         actions = einops.rearrange(actions, 'b t ... -> t b ...')
         nonterms = einops.rearrange(nonterms, 'b t ... -> t b ...')
         value_prefixes = einops.rearrange(value_prefixes, 'b t ... -> t b ...')
         dropped = einops.rearrange(dropped, 'b t ... -> t b ...')
 
-        model_loss, kl_loss, recon_loss, value_prefix_loss, tuning_loss, prior_dist, post_dist, posterior, obs_dist = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped)
+        model_loss, kl_loss, recon_loss, value_prefix_loss, tuning_loss, prior_dist, post_dist, posterior, obs_dist = self.representation_loss(obs, actions, value_prefixes, nonterms, dropped, batch_size=obs.shape[1])
 
         with torch.no_grad():
             prior_ent = torch.mean(prior_dist.entropy())
@@ -116,18 +113,22 @@ class DreamerWorldModel(pl.LightningModule):
 
 
     def representation_loss(self, obs, actions, value_prefixes, nonterms, dropped, batch_size=None):
-        t, b, *_ = obs.shape
         if batch_size is None:
             batch_size = self.batch_size
-        embed = torch.cat([enc(x) for enc, x in zip(self.ObsEncoders, torch.chunk(obs, self.config.num_views, 2))], dim=-1) #t to t+seq_len   
+        t, b, *_ = obs.shape
+        embed = torch.cat([
+            einops.rearrange(enc(einops.rearrange(x, 't b ... -> (t b) ...')), '(t b) ... -> t b ...', t=t, b=b)
+            for enc, x in zip(self.ObsEncoders, torch.chunk(obs, self.config.num_views, 2))],
+            dim=-1
+        ) #t to t+seq_len   
         prev_rssm_state = self.RSSM._init_rssm_state(batch_size)   
         prior, posterior = self.RSSM.rollout_observation(len(obs), embed, actions, nonterms, prev_rssm_state)
         post_modelstate = self.RSSM.get_model_state(posterior)               #t to t+seq_len   
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
         reward_dist = self.reward_predictor(post_modelstate)[...,0]
         reward_loss = self._reward_loss(reward_dist, value_prefixes)
-        
-        obs_dist = torch.stack([dec(einops.rearrange(post_modelstate, 't b d -> (t b) d')) for dec in self.ObsDecoders], dim=1)[...,0,:,:]
+        post_modelstate = einops.rearrange(post_modelstate, 't b d -> (t b) d')
+        obs_dist = torch.stack([dec(post_modelstate) for dec in self.ObsDecoders], dim=1)[...,0,:,:]
         obs_dist = einops.rearrange(obs_dist, '(t b) num_views ... -> t b num_views ...', t=t, b=b)
         recon_loss = self._recon_loss(obs_dist, obs, dropped)
 
@@ -140,6 +141,7 @@ class DreamerWorldModel(pl.LightningModule):
         embed = torch.cat([enc(x) for enc, x in zip(self.ObsEncoders, torch.chunk(init_obs, self.config.num_views, 1))], dim=-1) #t to t+seq_len   
         next_rssm_states = self.RSSM.extrapolate_from_init_obs(embed, action_sequence)
         model_states = self.RSSM.get_model_state(next_rssm_states)
+        model_states = einops.rearrange(model_states, 't b d -> (t b) d')
         obs_dist = torch.stack([dec(model_states) for dec in self.ObsDecoders], dim=1)[...,0,:,:]
         return obs_dist
 

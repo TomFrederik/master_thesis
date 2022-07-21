@@ -142,6 +142,7 @@ MT-ToyTask-Ours/
 hmm/MT-ToyTask-Ours
 hmm/MT-Pong-Ours
 hmm/wandb
+MT-Pong-Dreamer/
 
 #python notebooks
 .ipynb_checkpoints
@@ -151,3 +152,5 @@ hmm/wandb
 *.zip
 *.npz
 *.hdf5
+crossing/plot_generation.ipynb
+hmm/plot_generation.ipynb

@@ -1,6 +1,7 @@
 import numpy as np
 from torch.utils.data import Dataset
 import torch
+import torchvision as tv
 import sys
 sys.path.insert(0, '../')
 from crossing.wrappers import FunctionalMVW
@@ -80,7 +81,7 @@ def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     
     multiview_wrapper = FunctionalMVW(kwargs['percentage'], kwargs['num_views'], kwargs['dropout'], kwargs['view_null_value'], kwargs['drop_null_value'])
     # init mvwrapper
-    multiview_wrapper.observation(scale_obs(f['obs']["traj_0"]), kwargs['scale'])
+    multiview_wrapper.observation(scale_obs(f['obs']["traj_0"][...], kwargs['scale']))
         
     all_idcs = np.random.permutation(np.arange(len(f['obs'])))
     train_idcs = all_idcs[:int(train_val_split*len(f['obs']))]
@@ -213,7 +214,8 @@ class ToyBatchTrajToyData(Dataset):
         value_prefixes = np.zeros_like(action)
         if max_len + start_idx - traj_length >= 0:
             value_prefixes[-(max_len + start_idx - traj_length + 1):] = 1
-        return (
+        
+        return_tuple = (
             obs.astype(np.float32),
             action.astype(np.int64),
             value_prefixes.astype(np.float32),
@@ -221,6 +223,8 @@ class ToyBatchTrajToyData(Dataset):
             dropped.astype(np.float32),
             player_pos,
         )
+        
+        return return_tuple 
         
 class PongBatchTrajToyData(Dataset):
     def __init__(self, data_path, idcs, sigma, mu, mvwrapper, drop, max_len=-1, scale=1, get_player_pos=False):
@@ -234,7 +238,7 @@ class PongBatchTrajToyData(Dataset):
         self.scale = scale
         self.get_player_pos = get_player_pos
         with h5py.File(data_path, 'r') as f:
-            self.img_shape = f['obs'][f'traj_{self.idcs[0]}'].shape[-2:]
+            self.img_shape = (64, 64)
         
     def set_drop(self, drop: bool):
         self.drop = drop
@@ -249,10 +253,10 @@ class PongBatchTrajToyData(Dataset):
         # compute traj length and pad length
         with h5py.File(self.data_path, 'r') as f:
         
-            action = f['action'][f'traj_{self.idcs[idx]}']
-            obs = f['obs'][f'traj_{self.idcs[idx]}']
-            reward = f['reward'][f'traj_{self.idcs[idx]}'] 
-            done = f['done'][f'traj_{self.idcs[idx]}']
+            action = f['action'][f'traj_{self.idcs[idx]}'][...]
+            obs = f['obs'][f'traj_{self.idcs[idx]}'][...]
+            reward = f['reward'][f'traj_{self.idcs[idx]}'][...]
+            done = f['done'][f'traj_{self.idcs[idx]}'][...]
         
             traj_length = len(action)
         
@@ -304,7 +308,7 @@ class PongBatchTrajToyData(Dataset):
             # value_prefixes = np.zeros_like(action)
             # if max_len + start_idx - traj_length >= 0:
             #     value_prefixes[-(max_len + start_idx - traj_length + 1):] = 1
-        return (
+        return_tuple = (
             obs.astype(np.float32),
             action.astype(np.int64),
             value_prefixes.astype(np.float32),
@@ -312,6 +316,9 @@ class PongBatchTrajToyData(Dataset):
             dropped.astype(np.float32),
             player_pos,
         )
+        
+        return return_tuple 
+    
         
 def scale_obs(obs, scale):
     return torch.nn.functional.interpolate(torch.from_numpy(obs).float()[:,None], scale_factor=scale, mode='nearest-exact').numpy()[:,0]
