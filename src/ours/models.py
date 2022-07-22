@@ -386,7 +386,7 @@ class LightningNet(pl.LightningModule):
         self.log(f'Validation/unscaled_prior_loss', unscaled_prior_loss)
         self.log(f"Validation/total_loss", total_loss)
         self.log(f"Validation/total_unscaled_loss", total_loss - outputs['dyn_loss'] + unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
-        self.log(f"Validation/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + unscaled_prior_loss)
+        self.log(f"Validation/tuning_loss", total_loss - outputs['dyn_loss'] + 0.01 * unscaled_dyn_loss - outputs['prior_loss'] + 0.01 * unscaled_prior_loss)
         self.log(f"Validation/RewPlusUnscDyn", outputs['value_prefix_loss'] + unscaled_dyn_loss)
         
         return total_loss
