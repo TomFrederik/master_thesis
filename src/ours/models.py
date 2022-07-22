@@ -109,8 +109,6 @@ class DiscreteNet(nn.Module):
             state_bit_vecs = self.state_bit_vecs
             state_belief = F.softmax((state_logits[:, torch.arange(self.num_variables), state_bit_vecs]).sum(dim=-1), dim=-1)
 
-            num_non_zero = self.count_non_zero(state_belief)
-            
         # unnormalized p(z_t|x_t)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
         
@@ -143,9 +141,8 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_loss = 0
         
-        if not self.sparsemax:
-            num_non_zero_post = self.count_non_zero(posterior_belief_sequence).mean()
-            num_non_zero_prior = self.count_non_zero(prior_belief_sequence).mean()
+        num_non_zero_post = self.count_non_zero(posterior_belief_sequence).mean()
+        num_non_zero_prior = self.count_non_zero(prior_belief_sequence).mean()
             
         
         outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
