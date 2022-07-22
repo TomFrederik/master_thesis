@@ -59,6 +59,7 @@ def main(
     wandb_id,
     env_name,
     get_player_pos,
+    nonzero_thresh,
 ):
     
     # parse 'boolean' arguments (this needs to be done to be able to give them to the sweeper.. cringe)
@@ -151,6 +152,7 @@ def main(
         kl_scaling=kl_scaling,
         force_uniform_prior=force_uniform_prior,
         prior_noise_scale=prior_noise_scale,
+        nonzero_thresh=nonzero_thresh,
     )
     
     # set up wandb
@@ -181,6 +183,7 @@ def main(
         obs_scale=obs_scale,
         kernel_size=kernel_size,
         depth=depth,
+        nonzero_thresh=nonzero_thresh,
     )
     
     wandb_proj = "ToyTask" if env_name == 'toy' else "Pong"

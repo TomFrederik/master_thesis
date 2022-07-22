@@ -35,6 +35,7 @@ class DiscreteNet(nn.Module):
         sparsemax_k: int = 30,
         kl_scaling: float = 1.0,
         force_uniform_prior: bool = False,
+        nonzero_thresh: float = 1e-6
     ):
         if l_unroll < 1:
             raise ValueError('l_unroll must be at least 1')
@@ -56,6 +57,7 @@ class DiscreteNet(nn.Module):
         self.kl_scaling = kl_scaling
         self.num_variables = state_prior.num_variables
         self.force_uniform_prior = force_uniform_prior
+        self.nonzero_thresh = nonzero_thresh
         
         self.recon_normalizer = nn.Parameter(data=torch.stack([torch.from_numpy(view_masks[i]) for i in range(len(view_masks))], dim=0).sum(dim=[1,2]), requires_grad=False)
 
@@ -86,6 +88,9 @@ class DiscreteNet(nn.Module):
         posterior = posterior / posterior.sum(dim=-1, keepdim=True)
         return posterior, obs_logits
 
+    def count_non_zero(self, belief):
+        return torch.where(belief > self.nonzero_thresh, torch.ones_like(belief), torch.zeros_like(belief)).sum(dim=-1)
+    
     def forward(self, obs_sequence, action_sequence, value_prefix_sequence, nonterms, dropped, player_pos):
         outputs = dict()
         batch_size, seq_len, channels, h, w = obs_sequence.shape
@@ -104,6 +109,8 @@ class DiscreteNet(nn.Module):
             state_bit_vecs = self.state_bit_vecs
             state_belief = F.softmax((state_logits[:, torch.arange(self.num_variables), state_bit_vecs]).sum(dim=-1), dim=-1)
 
+            num_non_zero = self.count_non_zero(state_belief)
+            
         # unnormalized p(z_t|x_t)
         posterior_0, obs_logits_0 = self.compute_posterior(state_belief, state_bit_vecs, obs_sequence[:,0], dropped[:,0])
         
@@ -136,6 +143,11 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_loss = 0
         
+        if not self.sparsemax:
+            num_non_zero_post = self.count_non_zero(posterior_belief_sequence).mean()
+            num_non_zero_prior = self.count_non_zero(prior_belief_sequence).mean()
+            
+        
         outputs['prior_loss'] = self.kl_scaling * prior_loss * int(not self.force_uniform_prior)
         outputs['value_prefix_loss'] = value_prefix_loss
         outputs['recon_loss'] = recon_loss
@@ -144,6 +156,8 @@ class DiscreteNet(nn.Module):
         outputs['posterior_entropy'] = (posterior_entropy + sum(posterior_entropies))/(len(posterior_entropies) + 1)
         outputs['posterior_belief_sequence'] = posterior_belief_sequence
         outputs['posterior_bit_vec_sequence'] = posterior_bit_vec_sequence
+        outputs['num_non_zero_prior'] = num_non_zero_prior
+        outputs['num_non_zero_post'] = num_non_zero_post
         
         return outputs
 
@@ -186,6 +200,7 @@ class DiscreteNet(nn.Module):
             prior = prior + 1e-8
             prior = prior / torch.sum(prior, dim=-1, keepdim=True)
 
+
             # get the posterior for the next state
             state_belief_posterior, obs_logits = self.compute_posterior(prior, state_bit_vecs, obs_sequence[:,t], dropped[:,t])
             
@@ -221,7 +236,16 @@ class DiscreteNet(nn.Module):
         else:
             value_prefix_pred = None
         
-        return posterior_belief_sequence, posterior_bit_vecs_sequence, prior_belief_sequence, prior_entropies, posterior_entropies, obs_logits_sequence, value_prefix_pred, dyn_loss
+        return (
+            posterior_belief_sequence, 
+            posterior_bit_vecs_sequence, 
+            prior_belief_sequence, 
+            prior_entropies, 
+            posterior_entropies, 
+            obs_logits_sequence, 
+            value_prefix_pred, 
+            dyn_loss, 
+        )
 
     def compute_recon_loss(self, posterior_belief_sequence, obs_logits_sequence, dropped, nonterms):
         # posterior_belief_sequence has shape (batch, seq_len, num_states)
@@ -314,6 +338,7 @@ class LightningNet(pl.LightningModule):
         kl_scaling=1.0,
         force_uniform_prior=False,
         prior_noise_scale=0.0,
+        nonzero_thresh=1e-6,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -353,6 +378,7 @@ class LightningNet(pl.LightningModule):
             sparsemax_k,
             kl_scaling,
             force_uniform_prior,
+            nonzero_thresh,
         )
     
     def forward(self, obs, actions, value_prefixes, nonterms, dropped, player_pos):

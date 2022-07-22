@@ -46,6 +46,7 @@ def create_train_parser():
     parser.add_argument('--get_player_pos', action='store_true')
     parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--wandb_id', type=str, default=None)
+    parser.add_argument('--nonzero_thresh', type=float, default=1e-6)
     parser.add_argument('--track_grad_norm', type=int, default=-1)
     parser.add_argument('--max_len', type=int, default=10, help='Max length of an episode for batching purposes. Rest will be padded.')
     
