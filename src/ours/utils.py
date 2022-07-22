@@ -63,22 +63,28 @@ def kl_balancing_loss(
     kl = (balancing_coeff * discrete_kl(posterior.detach(), prior) + (1 - balancing_coeff) * discrete_kl(posterior, prior.detach()))
     return (nonterms * kl).mean()
 
-def _grad_discrete_entropy(p):
+def _grad_discrete_entropy(p, base='e'):
+    if base == 'e':
+        log = torch.log
+    elif base == '2':
+        log = torch.log2
+    else:
+        raise ValueError("base must be 'e' or '2'")
     out = torch.zeros_like(p)
     out[p == 0] = 0
-    out[p != 0] = p[p != 0].log()
+    out[p != 0] = log(p[p != 0])
     out[p != 0] = out[p != 0] * p[p != 0]
     return -out.sum(dim=-1).mean(dim=list(range(1, len(p.shape)-1)))
 
 @torch.no_grad()
-def _no_grad_discrete_entropy(p): 
-    return _grad_discrete_entropy(p)
+def _no_grad_discrete_entropy(p, base='e'): 
+    return _grad_discrete_entropy(p, base=base)
 
-def discrete_entropy(p, grad=False):
+def discrete_entropy(p, grad=False, base='e'):
     if grad:
-        return _grad_discrete_entropy(p)
+        return _grad_discrete_entropy(p, base=base)
     else:
-        return _no_grad_discrete_entropy(p)
+        return _no_grad_discrete_entropy(p, base=base)
     
 
 def batched_query_attention(keys, queries, query_batch_size=-1):
