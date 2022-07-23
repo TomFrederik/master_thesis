@@ -14,7 +14,8 @@ api = wandb.Api()
 ENT = "TomFrederik"
 NUM_SEEDS = 5
 NUM_SETTINGS = 21
-LOSS = "tuning_loss"
+# LOSS = "tuning_loss"
+LOSS = "value_prefix_loss"
 
 DREAMER_PROJ = "MT-ToyTask-Dreamer"
 OURS_PROJ = "MT-ToyTask-Ours"
