@@ -42,8 +42,8 @@ def fetch_loss_list_per_setting(
         if reduced_volume and setting_num not in [7, 10, 12]:
             continue
         for seed_num in range(num_seeds):
-            if setting_num == 5 and seed_num == 4:
-                print("WARNING: skipping setting 5, seed 4 -> need to run this again due to time limit")
+            if (setting_num, seed_num) in [(0, 2), (1, 2), (2, 1), (3, 2), (4, 0), (5, 2)]:
+                print(f"WARNING: skipping setting {setting_num}, seed {seed_num} because of NaNs")
                 continue
             run_id = f"setting_{setting_num}_seed_{seed_num}_job_{job_id}"
             loss = fetch_last_loss(api, run_id, project, loss_name, entity)
