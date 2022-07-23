@@ -61,6 +61,8 @@ train_parser: ArgumentParser = create_train_parser()
 train_parser.add_argument('--hparam_file', type=str, default='../hparam_files/perc_dropout/0.json')
 train_parser.add_argument('--best_hparam_file', type=str, default='../hparam_files/ours_best_hparams.json')
 train_parser.add_argument('--reduced_volume', action='store_true', help="Reduce num settings to 1")
+train_parser.add_argument('--sparsemax', type=str, default="no", choices=["yes", "no"])
+train_parser.add_argument('--sparsemax_k', type=int, default=128)
 train_parser.add_argument('--job_id', type=int, default=None)
 train_args = vars(train_parser.parse_args())
 
