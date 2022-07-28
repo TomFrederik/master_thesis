@@ -22,54 +22,6 @@ def _split_trajs(dones, actions, obs):
     obs = np.array([obs[start:stop] for i, (start, stop) in enumerate(zip(start_idcs, stop_idcs)) if i not in skip_idcs], dtype=object)
     return obs, actions
 
-@dataclass
-class Transition:
-    state: Tensor
-    action: Tensor
-    next_state: Tensor
-    value_prefix: Tensor
-    dropped: Tensor = None
-
-
-def _extract_transition_tuples(dones, action, obs):
-    transitions = []
-    ctr = 0
-    for i in range(len(action)-1,-1,-1):
-        if dones[i] == 1:
-            ctr = 0
-            continue
-        vp = 0.99 ** ctr
-        ctr += 1
-        transitions.append(Transition(obs[i], action[i], obs[i+1], vp))
-    return np.array(transitions)
-
-# def load_transition_data(data_path, multiview=False, train_val_split=0.9, max_datapoints=None, max_len=20, **kwargs):
-#     data = np.load(data_path)
-#     dones = data['done']
-#     obs = data['obs']
-#     action = data['action']
-        
-#     sigma = np.std(obs)
-#     mu = np.mean(obs)
-#     transitions = _extract_transition_tuples(dones, action, obs)
-#     if max_datapoints is not None:
-#         transitions = transitions[:max_datapoints]
-#     multiview = multiview
-#     if multiview:
-#         multiview_wrapper = FunctionalMVW(kwargs['percentages'], kwargs['dropout'], kwargs['null_value'])
-#     else:
-#         multiview_wrapper = None
-#     all_idcs = np.random.permutation(np.arange(len(transitions)))
-#     train_idcs = all_idcs[:int(train_val_split*len(transitions))]
-#     val_idcs = all_idcs[int(train_val_split*len(transitions)):]
-    
-#     return transitions[train_idcs], transitions[val_idcs], sigma, mu, multiview_wrapper
-
-# def construct_train_val_transition_data(data_path, multiview=False, train_val_split=0.9, test_only_dropout=False, max_datapoints=None, max_len=20, **kwargs):
-    # train_transitions, val_transitions, sigma, mu, mvwrapper = load_data(data_path, multiview, train_val_split, max_datapoints, max_len, **kwargs)
-    # train_data = TransitionData(train_transitions, sigma, mu, mvwrapper, drop=not test_only_dropout)
-    # val_data = TransitionData(val_transitions, sigma, mu, mvwrapper, drop=True)
-    # return train_data, val_data
 
 def load_data_h5py(data_path, train_val_split=0.9, **kwargs):
     f = h5py.File(data_path, 'r')
