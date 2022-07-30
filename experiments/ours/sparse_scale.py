@@ -24,10 +24,11 @@ def main(train_args):
     # update with args from best hparam file
     with open(args['best_hparam_file'], 'r') as f:
         best_hparams = json.load(f)
-    best_hparams.update(train_args)
-    train_args = best_hparams
+    
+    for key in best_hparams:
+        if key != 'num_variables':
+            train_args[key] = best_hparams[key]
     train_args.update({"wandb_group": "dense_perc_dropout"})
-
     if args['job_id'] is None:
         job_id = int(time.time())
     else:
