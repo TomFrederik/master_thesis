@@ -15,9 +15,9 @@ yes_1 = [14, 15, 17, 19]
 
 
 
-dense_file = f"./data/dense/{DENSE_JOB_ID}/value_prefix_loss/mean_std_per_setting.json"
-sparse_file = f"./data/sparse/{SPARSE_JOB_ID}/value_prefix_loss/mean_std_per_setting.json"
-dreamer_file = f"./data/dreamer/{DREAMER_JOB_ID}/value_prefix_loss/mean_std_per_setting.json"
+dense_file = f"./data/dense/{DENSE_JOB_ID}/dyn_loss/mean_std_per_setting.json"
+sparse_file = f"./data/sparse/{SPARSE_JOB_ID}/dyn_loss/mean_std_per_setting.json"
+dreamer_file = f"./data/dreamer/{DREAMER_JOB_ID}/dyn_loss/mean_std_per_setting.json"
 
 with open(dense_file, "r") as f:
     dense_mean_std_per_setting = json.load(f)
@@ -86,11 +86,11 @@ ax[0].grid(linestyle='--', alpha=0.5)
 ax[1].grid(linestyle='--', alpha=0.5)
 ax[2].grid(linestyle='--', alpha=0.5)
 ax[0].set_yscale('log')
-ax[0].set_ylabel("Rew loss")
+ax[0].set_ylabel("Dyn loss")
 ax[0].legend()
 ax[1].legend()
 ax[2].legend()
-plt.savefig("test_only_true_rew.pdf")
+plt.savefig("test_only_true_dyn.pdf")
 
 fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), sharey=True, gridspec_kw=dict(wspace=0.05))
 # ax.plot(xticks_yes, [x[0] for x in test_only_true_view_075], label=r"$p=0.75$")
@@ -119,9 +119,9 @@ ax[2].set_xticks(xticks_no, xticks_no)
 ax[0].grid(linestyle='--', alpha=0.5)
 ax[1].grid(linestyle='--', alpha=0.5)
 ax[2].grid(linestyle='--', alpha=0.5)
-ax[0].set_ylabel("Rew loss")
+ax[0].set_ylabel("Dyn loss")
 ax[0].set_yscale('log')
 ax[0].legend()
 ax[1].legend()
 ax[2].legend()
-plt.savefig("test_only_false_rew.pdf")
+plt.savefig("test_only_false_dyn.pdf")
