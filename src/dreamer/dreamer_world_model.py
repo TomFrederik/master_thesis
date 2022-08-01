@@ -33,7 +33,6 @@ class DreamerWorldModel(pl.LightningModule):
         category_size = config.rssm_info['category_size']
         class_size = config.rssm_info['class_size']
         stoch_size = category_size*class_size
-        
         deter_size = config.rssm_info['deter_size']
         modelstate_size = stoch_size + deter_size
         
@@ -46,7 +45,8 @@ class DreamerWorldModel(pl.LightningModule):
         self.ObsEncoders = nn.ModuleList([ObsEncoder(obs_shape) for _ in range(config.num_views)])
         self.ObsDecoders = nn.ModuleList([
             ObsDecoder(
-                tuple([1] + list(obs_shape[1:])), 
+                tuple([1] + list(obs_shape[1:])),
+                input_dim=modelstate_size 
             )
             for _ in range(config.num_views)
         ])

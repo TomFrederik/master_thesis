@@ -51,7 +51,7 @@ class ObsEncoder(nn.Module):
             raise NotImplementedError
 
 class ObsDecoder(nn.Module):
-    def __init__(self, output_shape):
+    def __init__(self, output_shape, input_dim):
         """
         :param output_shape: tuple containing shape of output obs
         :param embed_size: the size of input vector, for dreamerv2 : modelstate 
@@ -61,7 +61,7 @@ class ObsDecoder(nn.Module):
         
         if h == 64:
             self.decoder = nn.Sequential(
-                nn.Linear(1124, 1024),
+                nn.Linear(input_dim, 1024),
                 Rearrange("b d -> b d 1 1"),
                 nn.ConvTranspose2d(1024, 128, 5, 2),
                 nn.ReLU(),
@@ -73,7 +73,7 @@ class ObsDecoder(nn.Module):
             )
         elif h == 7:
             self.decoder = nn.Sequential(
-                nn.Linear(1124, 64),
+                nn.Linear(input_dim, 64),
                 Rearrange("b d -> b d 1 1"),
                 nn.ConvTranspose2d(64, 32, 3, 2),
                 nn.ReLU(),
