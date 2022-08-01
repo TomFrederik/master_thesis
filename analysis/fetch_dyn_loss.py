@@ -8,7 +8,7 @@ import os
 import sys
 sys.path.append('../')
 
-from analysis.utils import fetch_loss_list_per_setting, compute_mean_std_per_setting
+from analysis.utils import download_and_save
 
 api = wandb.Api()
 ENT = "TomFrederik"
@@ -31,30 +31,39 @@ dense_dir = f"./data/dense/{DENSE_JOB_ID}/{LOSS}"
 sparse_dir = f"./data/sparse/{SPARSE_JOB_ID}/{LOSS}"
 
 print('Loading dreamer data...')
-if not os.path.exists(dreamer_dir):
-    os.makedirs(dreamer_dir, exist_ok=True)
-    dreamer_mean_std_per_setting = compute_mean_std_per_setting(fetch_loss_list_per_setting(api, DREAMER_JOB_ID, NUM_SETTINGS, NUM_SEEDS, DREAMER_PROJ, "kl_loss", ENT))
-    with open(f"{dreamer_dir}/mean_std_per_setting.json", "w") as f:
-        json.dump(dreamer_mean_std_per_setting, f)
-else:
-    print('Directory already exists -> skipping...')
-
+download_and_save(
+    api,
+    ENT,
+    dreamer_dir, 
+    DREAMER_JOB_ID, 
+    NUM_SETTINGS,
+    NUM_SEEDS,
+    DREAMER_PROJ,
+    "kl_loss",
+)
 
 print('Loading dense data...')
-if not os.path.exists(dense_dir):
-    os.makedirs(dense_dir, exist_ok=True)
-    ours_mean_std_per_setting = compute_mean_std_per_setting(fetch_loss_list_per_setting(api, DENSE_JOB_ID, NUM_SETTINGS, NUM_SEEDS, OURS_PROJ, LOSS, ENT, skip_tuples=DENSE_SKIP))
-    with open(f"{dense_dir}/mean_std_per_setting.json", "w") as f:
-        json.dump(ours_mean_std_per_setting, f)
-else:
-    print('Directory already exists -> skipping...')
-    
+download_and_save(
+    api,
+    ENT,
+    dense_dir, 
+    DENSE_JOB_ID, 
+    NUM_SETTINGS,
+    NUM_SEEDS,
+    OURS_PROJ,
+    LOSS,
+    DENSE_SKIP
+)
 
 print('Loading sparse data...')
-if not os.path.exists(sparse_dir):
-    os.makedirs(sparse_dir, exist_ok=True)
-    ours_mean_std_per_setting = compute_mean_std_per_setting(fetch_loss_list_per_setting(api, SPARSE_JOB_ID, NUM_SETTINGS, NUM_SEEDS, OURS_PROJ, LOSS, ENT, skip_tuples=SPARSE_SKIP))
-    with open(f"{sparse_dir}/mean_std_per_setting.json", "w") as f:
-        json.dump(ours_mean_std_per_setting, f)
-else:
-    print('Directory already exists -> skipping...')
+download_and_save(
+    api,
+    ENT,
+    sparse_dir, 
+    SPARSE_JOB_ID, 
+    NUM_SETTINGS,
+    NUM_SEEDS,
+    OURS_PROJ,
+    LOSS,
+    SPARSE_SKIP
+)
