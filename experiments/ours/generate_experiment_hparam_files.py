@@ -8,7 +8,7 @@ params = {
     'test_only_dropout': ['yes','no']
 }
 
-os.makedirs('./hparam_files/hmm/perc_dropout', exist_ok=True)
+os.makedirs('../hparam_files/perc_dropout', exist_ok=True)
 
 ctr = 0
 for i, results in enumerate(product(*params.values())):
@@ -17,5 +17,5 @@ for i, results in enumerate(product(*params.values())):
         continue
     else:
         print(new_params)
-        json.dump(new_params, open(f'./hparam_files/hmm/perc_dropout/{ctr}.json', 'w'))
+        json.dump(new_params, open(f'../hparam_files/perc_dropout/{ctr}.json', 'w'))
         ctr += 1
