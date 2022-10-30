@@ -17,7 +17,7 @@ NUM_SETTINGS = [4, 8, 12, 16, 20, 24, 28]
 
 PROJ = "MT-ToyTask-Dreamer"
 
-JOB_ID = "9820228" #NOTE <-- change this for new runs
+JOB_ID = "9826900" #NOTE <-- change this for new runs
 
 
 for loss in ["tuning_loss", "value_prefix_loss", "kl_loss"]:

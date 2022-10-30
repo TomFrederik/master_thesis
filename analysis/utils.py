@@ -26,10 +26,7 @@ def fetch_last_loss(
     entity: str = 'TomFrederik'
 ) -> float:
     run = api.run(f"{entity}/{project}/{run_id}")
-    print(loss_name)
     out = run.history(keys=[f'Validation/{loss_name}'])
-    print(out)
-    print(out.iloc[-1])
     return run.history(keys=[f'Validation/{loss_name}']).iloc[-1][f'Validation/{loss_name}']
 
 
