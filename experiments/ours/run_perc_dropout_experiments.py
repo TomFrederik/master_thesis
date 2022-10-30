@@ -43,12 +43,11 @@ def main(train_args):
     with open(args['hparam_file'], 'r') as f:
         hparams = json.load(f)
     
-    run_args = train_args.copy()
-
+    sparsity = "sparse" if train_args['sparsemax'] == "yes" else "dense"
     # update with args from specific experiment
+    run_args = train_args.copy()
     run_args.update(hparams)
-    
-    run_args.update({"wandb_id": f"setting_{setting_id}_seed_{run_args['seed']}_job_{job_id}"})
+    run_args.update({"wandb_id": f"setting_{setting_id}_{sparsity}_seed_{run_args['seed']}_job_{job_id}"})
     
     print(f"Setting ID = {setting_id}, Running with hparams: {hparams}, seed: {run_args['seed']}")
     try:
